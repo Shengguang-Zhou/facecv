@@ -101,11 +101,16 @@ class DatabaseConfig:
         import logging
         logger = logging.getLogger(__name__)
         
+        facecv_db_type_set = "FACECV_DB_TYPE" in os.environ
+        facecv_mysql_host_set = "FACECV_MYSQL_HOST" in os.environ
+        facecv_mysql_user_set = "FACECV_MYSQL_USER" in os.environ
+        facecv_mysql_password_set = "FACECV_MYSQL_PASSWORD" in os.environ
+        
         db_type = os.getenv("FACECV_DB_TYPE") or os.getenv("DB_TYPE", "sqlite")
         if os.getenv("DB_TYPE"):
             logger.warning("DB_TYPE 环境变量已弃用，请使用 FACECV_DB_TYPE")
             
-        mysql_host = os.getenv("FACECV_MYSQL_HOST") or os.getenv("MYSQL_HOST", "localhost")
+        mysql_host = os.getenv("FACECV_MYSQL_HOST") if facecv_mysql_host_set else os.getenv("MYSQL_HOST", "localhost")
         if os.getenv("MYSQL_HOST"):
             logger.warning("MYSQL_HOST 环境变量已弃用，请使用 FACECV_MYSQL_HOST")
             
@@ -113,11 +118,11 @@ class DatabaseConfig:
         if os.getenv("MYSQL_PORT"):
             logger.warning("MYSQL_PORT 环境变量已弃用，请使用 FACECV_MYSQL_PORT")
             
-        mysql_user = os.getenv("FACECV_MYSQL_USER") or os.getenv("MYSQL_USER", "")
+        mysql_user = os.getenv("FACECV_MYSQL_USER") if facecv_mysql_user_set else os.getenv("MYSQL_USER", "")
         if os.getenv("MYSQL_USER"):
             logger.warning("MYSQL_USER 环境变量已弃用，请使用 FACECV_MYSQL_USER")
             
-        mysql_password = os.getenv("FACECV_MYSQL_PASSWORD") or os.getenv("MYSQL_PASSWORD", "")
+        mysql_password = os.getenv("FACECV_MYSQL_PASSWORD") if facecv_mysql_password_set else os.getenv("MYSQL_PASSWORD", "")
         if os.getenv("MYSQL_PASSWORD"):
             logger.warning("MYSQL_PASSWORD 环境变量已弃用，请使用 FACECV_MYSQL_PASSWORD")
             
