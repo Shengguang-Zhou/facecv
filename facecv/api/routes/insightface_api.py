@@ -42,21 +42,33 @@ def get_recognizer():
     """
     global _recognizer
     if _recognizer is None:
+        from facecv.config import get_settings, get_runtime_config
+        
         settings = get_settings()
+        runtime_config = get_runtime_config()
+        
         # Use standardized database configuration
         face_db = get_default_database()
         
+        arcface_enabled = runtime_config.get('arcface_enabled', 
+                                           getattr(settings, 'arcface_enabled', False))
+        
         # Check if ArcFace is enabled
-        if getattr(settings, 'arcface_enabled', False):
+        if arcface_enabled:
             # Use dedicated ArcFace recognizer
             logger.info("Initializing dedicated ArcFace recognizer...")
             
-            det_size = tuple(getattr(settings, 'insightface_det_size', [640, 640]))
-            det_thresh = getattr(settings, 'insightface_det_thresh', 0.5)
-            similarity_threshold = getattr(settings, 'insightface_similarity_thresh', 0.35)
+            det_size = tuple(runtime_config.get('insightface_det_size', 
+                                              getattr(settings, 'insightface_det_size', [640, 640])))
+            det_thresh = runtime_config.get('insightface_det_thresh', 
+                                          getattr(settings, 'insightface_det_thresh', 0.5))
+            similarity_threshold = runtime_config.get('insightface_similarity_thresh', 
+                                                    getattr(settings, 'insightface_similarity_thresh', 0.35))
             
             # Auto-select ArcFace model based on backbone preference
-            backbone = getattr(settings, 'arcface_backbone', 'resnet50')
+            backbone = runtime_config.get('arcface_backbone', 
+                                        getattr(settings, 'arcface_backbone', 'resnet50'))
+            
             if backbone == 'mobilefacenet':
                 model_name = 'buffalo_s_mobilefacenet'
             else:
@@ -74,21 +86,27 @@ def get_recognizer():
             logger.info(f"ArcFace recognizer initialized:")
             logger.info(f"  Model: {model_name}")
             logger.info(f"  Backbone: {backbone}")
-            logger.info(f"  Dataset: {getattr(settings, 'arcface_dataset', 'webface600k')}")
-            logger.info(f"  Embedding Size: {getattr(settings, 'arcface_embedding_size', 512)}")
+            logger.info(f"  Dataset: {runtime_config.get('arcface_dataset', getattr(settings, 'arcface_dataset', 'webface600k'))}")
+            logger.info(f"  Embedding Size: {runtime_config.get('arcface_embedding_size', getattr(settings, 'arcface_embedding_size', 512))}")
             
         else:
             # Use traditional buffalo models
             logger.info("Initializing Real InsightFace recognizer...")
             
-            # 获取模型配置，使用settings中的新配置项
-            model_pack = getattr(settings, 'insightface_model_pack', 'buffalo_l')
-            det_size = tuple(getattr(settings, 'insightface_det_size', [640, 640]))
-            det_thresh = getattr(settings, 'insightface_det_thresh', 0.5)
-            similarity_threshold = getattr(settings, 'insightface_similarity_thresh', 0.35)
-            enable_emotion = getattr(settings, 'insightface_enable_emotion', True)
-            enable_mask = getattr(settings, 'insightface_enable_mask', True)
-            prefer_gpu = getattr(settings, 'insightface_prefer_gpu', True)
+            model_pack = runtime_config.get('insightface_model_pack', 
+                                          getattr(settings, 'insightface_model_pack', 'buffalo_l'))
+            det_size = tuple(runtime_config.get('insightface_det_size', 
+                                              getattr(settings, 'insightface_det_size', [640, 640])))
+            det_thresh = runtime_config.get('insightface_det_thresh', 
+                                          getattr(settings, 'insightface_det_thresh', 0.5))
+            similarity_threshold = runtime_config.get('insightface_similarity_thresh', 
+                                                    getattr(settings, 'insightface_similarity_thresh', 0.35))
+            enable_emotion = runtime_config.get('enable_emotion', 
+                                              getattr(settings, 'insightface_enable_emotion', True))
+            enable_mask = runtime_config.get('enable_mask', 
+                                           getattr(settings, 'insightface_enable_mask', True))
+            prefer_gpu = runtime_config.get('prefer_gpu', 
+                                          getattr(settings, 'insightface_prefer_gpu', True))
             
             # Use Real InsightFace recognizer with configurable parameters
             _recognizer = RealInsightFaceRecognizer(
@@ -110,7 +128,7 @@ def get_recognizer():
             logger.info(f"  Mask Detection: {enable_mask}")
         
         logger.info(f"  Database: {face_db.__class__.__name__}")
-        logger.info(f"  Recognizer Type: {'ArcFace' if getattr(settings, 'arcface_enabled', False) else 'RealInsightFace'}")
+        logger.info(f"  Recognizer Type: {'ArcFace' if arcface_enabled else 'RealInsightFace'}")
     return _recognizer
 
 # ==================== Model Management Endpoints ====================
@@ -140,11 +158,15 @@ async def switch_model_type(
         # Clear current recognizer to force reload
         _recognizer = None
         
-        # Update settings temporarily (in production, this should update config file)
+        from facecv.config import get_runtime_config, get_settings
+        
+        # 获取当前设置
         settings = get_settings()
-        settings.arcface_enabled = enable_arcface
+        runtime_config = get_runtime_config()
+        
+        runtime_config.set("arcface_enabled", enable_arcface)
         if enable_arcface and arcface_backbone:
-            settings.arcface_backbone = arcface_backbone
+            runtime_config.set("arcface_backbone", arcface_backbone)
         
         # Get new recognizer
         new_recognizer = get_recognizer()
@@ -159,9 +181,9 @@ async def switch_model_type(
             "model_info": model_info,
             "configuration": {
                 "arcface_enabled": enable_arcface,
-                "backbone": arcface_backbone if enable_arcface else settings.insightface_model_pack,
-                "similarity_threshold": settings.insightface_similarity_thresh,
-                "detection_threshold": settings.insightface_det_thresh
+                "backbone": arcface_backbone if enable_arcface else runtime_config.get("insightface_model_pack"),
+                "similarity_threshold": runtime_config.get("insightface_similarity_thresh"),
+                "detection_threshold": runtime_config.get("insightface_det_thresh")
             }
         }
         
@@ -778,9 +800,11 @@ async def select_model(
         )
     
     try:
-        # Get current model
-        settings = get_settings()
-        previous_model = getattr(settings, 'insightface_model_pack', 'buffalo_l')
+        from facecv.config import get_runtime_config
+        
+        runtime_config = get_runtime_config()
+        
+        previous_model = runtime_config.get('insightface_model_pack', 'buffalo_l')
         
         if previous_model == model:
             return {
@@ -790,9 +814,7 @@ async def select_model(
                 "current_model": model
             }
         
-        # Update settings with new model
-        # Note: This is a runtime change and won't persist after restart
-        settings.insightface_model_pack = model
+        runtime_config.set("insightface_model_pack", model)
         
         # Reset recognizer to force reinitialization with new model
         _recognizer = None

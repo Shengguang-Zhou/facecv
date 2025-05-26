@@ -1,12 +1,14 @@
 """应用配置"""
 
-from typing import List, Optional, Dict, Any, Literal
+from typing import List, Optional, Dict, Any, Literal, Union
 from functools import lru_cache
 from pydantic_settings import BaseSettings
 from pydantic import validator, Field
 import os
 import yaml
 from pathlib import Path
+
+MODEL_CONFIG_PATH = Path(__file__).parent / "model_config.yaml"
 
 class Settings(BaseSettings):
     """应用配置类 - 包含验证和路径标准化"""
@@ -41,13 +43,10 @@ class Settings(BaseSettings):
         description="ArcFace骨干网络 - resnet50(平衡), resnet100(最佳精度), resnet18(快速), mobilefacenet(移动端)"
     )
     arcface_dataset: Literal["ms1mv2", "ms1mv3", "glint360k", "webface600k"] = Field(
-        default="ms1mv3", 
-        description="ArcFace训练数据集 - ms1mv3(推荐), glint360k(大规模), ms1mv2(经典), webface600k(多样性)"
+        default="webface600k", 
+        description="ArcFace训练数据集 - webface600k(推荐), ms1mv3(通用), glint360k(大规模), ms1mv2(经典)"
     )
-    arcface_embedding_size: Literal[128, 256, 512] = Field(
-        default=512, 
-        description="ArcFace特征向量维度 - 512(标准), 256(紧凑), 128(极简)"
-    )
+    arcface_embedding_size: int = Field(default=512, ge=128, le=2048, description="ArcFace特征向量维度")
     arcface_margin: float = Field(default=0.5, ge=0.1, le=1.0, description="ArcFace角度边界参数")
     arcface_scale: float = Field(default=64.0, ge=16.0, le=128.0, description="ArcFace缩放参数")
     arcface_auto_download: bool = Field(default=True, description="自动下载ArcFace模型权重")
@@ -69,7 +68,13 @@ class Settings(BaseSettings):
     
     # 数据库配置
     db_type: Literal["sqlite", "mysql", "chromadb"] = Field(default="sqlite", description="数据库类型")
-    db_connection_string: str = Field(default="sqlite:///data/db/facecv.db", description="数据库连接串")
+    db_connection_string: Optional[str] = Field(default=None, description="数据库连接串")
+    
+    mysql_host: str = Field(default="localhost", description="MySQL主机地址")
+    mysql_port: int = Field(default=3306, description="MySQL端口")
+    mysql_user: str = Field(default="root", description="MySQL用户名")
+    mysql_password: str = Field(default="", description="MySQL密码")
+    mysql_database: str = Field(default="facecv", description="MySQL数据库名")
     
     # 标准化路径配置
     data_dir: str = Field(default="./data", description="数据目录")
@@ -77,18 +82,6 @@ class Settings(BaseSettings):
     log_dir: str = Field(default="./data/logs", description="日志目录")
     model_cache_dir: str = Field(default="./models", description="模型缓存目录")
     upload_dir: str = Field(default="./data/uploads", description="上传文件目录")
-    
-    # ArcFace 专用配置
-    arcface_enabled: bool = Field(default=False, description="启用专用ArcFace模型 (替代buffalo)")
-    arcface_backbone: Literal["resnet18", "resnet34", "resnet50", "resnet100", "mobilefacenet"] = Field(
-        default="resnet50", 
-        description="ArcFace骨干网络 - resnet50(平衡), resnet100(最佳精度), resnet18(快速), mobilefacenet(移动端)"
-    )
-    arcface_dataset: Literal["ms1mv3", "webface600k", "glint360k"] = Field(
-        default="webface600k", 
-        description="ArcFace训练数据集 - webface600k(推荐), ms1mv3(通用), glint360k(大规模)"
-    )
-    arcface_embedding_size: int = Field(default=512, ge=128, le=2048, description="ArcFace特征向量维度")
     
     # 性能配置
     batch_size: int = Field(default=32, ge=1, le=512, description="批处理大小")
@@ -134,11 +127,12 @@ class Settings(BaseSettings):
     @validator('db_connection_string')
     def validate_db_connection(cls, v, values):
         """验证数据库连接串格式"""
-        db_type = values.get('db_type', 'sqlite')
-        if db_type == 'sqlite' and not v.startswith('sqlite:///'):
-            raise ValueError('SQLite连接串必须以sqlite:///开头')
-        elif db_type == 'mysql' and not v.startswith(('mysql://', 'mysql+pymysql://')):
-            raise ValueError('MySQL连接串必须以mysql://或mysql+pymysql://开头')
+        if v is not None:
+            db_type = values.get('db_type', 'sqlite')
+            if db_type == 'sqlite' and not v.startswith('sqlite:///'):
+                raise ValueError('SQLite连接串必须以sqlite:///开头')
+            elif db_type == 'mysql' and not v.startswith(('mysql://', 'mysql+pymysql://')):
+                raise ValueError('MySQL连接串必须以mysql://或mysql+pymysql://开头')
         return v
     
     @validator('allowed_extensions')
@@ -167,15 +161,22 @@ class Settings(BaseSettings):
         return os.path.join(self.data_dir, relative_path)
     
     def get_db_path(self) -> str:
-        """获取数据库文件路径"""
-        if self.db_type == 'sqlite':
-            # 从连接串中提取路径
-            if self.db_connection_string.startswith('sqlite:///'):
+        """获取数据库文件路径或连接串"""
+        if self.db_connection_string is not None:
+            if self.db_type == 'sqlite' and self.db_connection_string.startswith('sqlite:///'):
                 db_file = self.db_connection_string[10:]  # 移除 'sqlite:///'
                 if not os.path.isabs(db_file):
                     return os.path.join(self.db_dir, os.path.basename(db_file))
                 return db_file
-        return self.db_connection_string
+            return self.db_connection_string
+        
+        if self.db_type == 'sqlite':
+            db_file = os.path.join(self.db_dir, 'facecv.db')
+            return f"sqlite:///{db_file}"
+        elif self.db_type == 'mysql':
+            return f"mysql+pymysql://{self.mysql_user}:{self.mysql_password}@{self.mysql_host}:{self.mysql_port}/{self.mysql_database}"
+        
+        return f"sqlite:///{os.path.join(self.db_dir, 'facecv.db')}"
     
     def get_log_path(self) -> Optional[str]:
         """获取日志文件路径"""
@@ -203,13 +204,13 @@ class Settings(BaseSettings):
         """获取模型缓存路径"""
         return os.path.join(self.model_cache_dir, model_name)
     
-    def get_arcface_weights_path(self, backbone: str = None, dataset: str = None) -> str:
+    def get_arcface_weights_path(self, backbone: Optional[str] = None, dataset: Optional[str] = None) -> str:
         """获取ArcFace权重路径"""
         backbone = backbone or self.arcface_backbone
         dataset = dataset or self.arcface_dataset
         return os.path.join(self.arcface_weights_dir, backbone, dataset)
     
-    def get_arcface_model_path(self, backbone: str = None, dataset: str = None, filename: str = None) -> str:
+    def get_arcface_model_path(self, backbone: Optional[str] = None, dataset: Optional[str] = None, filename: Optional[str] = None) -> str:
         """获取ArcFace模型文件完整路径"""
         base_path = self.get_arcface_weights_path(backbone, dataset)
         if filename:
@@ -232,13 +233,20 @@ class Settings(BaseSettings):
         use_enum_values = True  # 使用枚举值
 
 
-def load_model_config(config_path: Optional[str] = None, environment: str = "production") -> Dict[str, Any]:
+@lru_cache()
+def load_model_config(config_path: Optional[Union[str, Path]] = None, environment: str = "production") -> Dict[str, Any]:
     """Load model configuration from YAML file"""
+    import logging
+    logger = logging.getLogger(__name__)
+    
     if config_path is None:
-        config_path = Path(__file__).parent / "model_config.yaml"
+        config_path = MODEL_CONFIG_PATH
+    else:
+        if isinstance(config_path, str):
+            config_path = Path(config_path)
     
     try:
-        with open(config_path, 'r', encoding='utf-8') as f:
+        with config_path.open('r', encoding='utf-8') as f:
             config = yaml.safe_load(f)
         
         # Apply environment-specific overrides
@@ -247,11 +255,17 @@ def load_model_config(config_path: Optional[str] = None, environment: str = "pro
             config = _merge_configs(config, env_config)
         
         return config
-    except FileNotFoundError:
-        # Return default config if file not found
+    except FileNotFoundError as e:
+        logger.error(f"配置文件未找到: {config_path} - {e}")
+        logger.info("使用默认模型配置")
+        return _get_default_model_config()
+    except yaml.YAMLError as e:
+        logger.error(f"YAML解析错误: {e}")
+        logger.warning(f"配置文件 {config_path} 格式无效，使用默认配置")
         return _get_default_model_config()
     except Exception as e:
-        print(f"Warning: Failed to load model config: {e}")
+        logger.error(f"加载模型配置时出错: {e}")
+        logger.warning("使用默认模型配置")
         return _get_default_model_config()
 
 

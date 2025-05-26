@@ -45,7 +45,7 @@ setup(
         "scikit-learn>=0.24.0",
         "pymongo>=3.12.0",
         "sqlalchemy>=1.4.0",
-        "chromadb>=0.3.0",
+        "chromadb>=1.0.10",
     ],
     extras_require={
         "dev": [

@@ -22,10 +22,10 @@ class DatabaseConfig:
     db_dir: str = "./data/db"
     
     # MySQL配置
-    mysql_host: str = "mysql"  # 硬编码生产环境
+    mysql_host: str = ""  # 从环境变量加载
     mysql_port: int = 3306
-    mysql_user: str = "root"
-    mysql_password: str = "password"  # 硬编码密码（按用户要求）
+    mysql_user: str = ""
+    mysql_password: str = ""  # 从环境变量加载
     mysql_database: str = "facecv"
     mysql_charset: str = "utf8mb4"
     
@@ -60,8 +60,13 @@ class DatabaseConfig:
         if not (1 <= self.mysql_port <= 65535):
             raise ValueError(f"MySQL端口号无效: {self.mysql_port}")
         
-        if self.db_type == "mysql" and not self.mysql_password:
-            raise ValueError("MySQL密码不能为空")
+        if self.db_type == "mysql":
+            if not self.mysql_host:
+                raise ValueError("MySQL主机不能为空 (设置 FACECV_MYSQL_HOST)")
+            if not self.mysql_user:
+                raise ValueError("MySQL用户名不能为空 (设置 FACECV_MYSQL_USER)")
+            if not self.mysql_password:
+                raise ValueError("MySQL密码不能为空 (设置 FACECV_MYSQL_PASSWORD)")
         
         if not (1 <= self.pool_size <= 100):
             raise ValueError(f"连接池大小无效: {self.pool_size}")
@@ -93,31 +98,63 @@ class DatabaseConfig:
     @classmethod
     def from_env(cls) -> 'DatabaseConfig':
         """从环境变量创建配置（保留环境变量覆盖能力）"""
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        facecv_db_type_set = "FACECV_DB_TYPE" in os.environ
+        facecv_mysql_host_set = "FACECV_MYSQL_HOST" in os.environ
+        facecv_mysql_user_set = "FACECV_MYSQL_USER" in os.environ
+        facecv_mysql_password_set = "FACECV_MYSQL_PASSWORD" in os.environ
+        
+        db_type = os.getenv("FACECV_DB_TYPE") or os.getenv("DB_TYPE", "sqlite")
+        if os.getenv("DB_TYPE"):
+            logger.warning("DB_TYPE 环境变量已弃用，请使用 FACECV_DB_TYPE")
+            
+        mysql_host = os.getenv("FACECV_MYSQL_HOST") if facecv_mysql_host_set else os.getenv("MYSQL_HOST", "localhost")
+        if os.getenv("MYSQL_HOST"):
+            logger.warning("MYSQL_HOST 环境变量已弃用，请使用 FACECV_MYSQL_HOST")
+            
+        mysql_port = os.getenv("FACECV_MYSQL_PORT") or os.getenv("MYSQL_PORT", "3306")
+        if os.getenv("MYSQL_PORT"):
+            logger.warning("MYSQL_PORT 环境变量已弃用，请使用 FACECV_MYSQL_PORT")
+            
+        mysql_user = os.getenv("FACECV_MYSQL_USER") if facecv_mysql_user_set else os.getenv("MYSQL_USER", "")
+        if os.getenv("MYSQL_USER"):
+            logger.warning("MYSQL_USER 环境变量已弃用，请使用 FACECV_MYSQL_USER")
+            
+        mysql_password = os.getenv("FACECV_MYSQL_PASSWORD") if facecv_mysql_password_set else os.getenv("MYSQL_PASSWORD", "")
+        if os.getenv("MYSQL_PASSWORD"):
+            logger.warning("MYSQL_PASSWORD 环境变量已弃用，请使用 FACECV_MYSQL_PASSWORD")
+            
+        mysql_database = os.getenv("FACECV_MYSQL_DATABASE") or os.getenv("MYSQL_DATABASE", "facecv")
+        if os.getenv("MYSQL_DATABASE"):
+            logger.warning("MYSQL_DATABASE 环境变量已弃用，请使用 FACECV_MYSQL_DATABASE")
+        
         return cls(
-            db_type=os.getenv("FACECV_DB_TYPE", "sqlite"),
-            base_data_dir=os.getenv("FACECV_DATA_DIR", "./data"),
-            db_dir=os.getenv("FACECV_DB_DIR", "./data/db"),
-            # MySQL配置 - 硬编码默认值，但允许环境变量覆盖
-            mysql_host=os.getenv("FACECV_MYSQL_HOST", "eurekailab.mysql.rds.aliyuncs.com"),
-            mysql_port=int(os.getenv("FACECV_MYSQL_PORT", "3306")),
-            mysql_user=os.getenv("FACECV_MYSQL_USER", "root"),
-            mysql_password=os.getenv("FACECV_MYSQL_PASSWORD", "password"),
-            mysql_database=os.getenv("FACECV_MYSQL_DATABASE", "facecv"),
-            mysql_charset=os.getenv("FACECV_MYSQL_CHARSET", "utf8mb4"),
+            db_type=db_type,
+            base_data_dir=os.getenv("FACECV_DATA_DIR") or os.getenv("DATA_DIR", "./data"),
+            db_dir=os.getenv("FACECV_DB_DIR") or os.getenv("DB_DIR", "./data/db"),
+            # MySQL配置 - 使用安全的本地默认值
+            mysql_host=mysql_host,
+            mysql_port=int(mysql_port),
+            mysql_user=mysql_user,
+            mysql_password=mysql_password,
+            mysql_database=mysql_database,
+            mysql_charset=os.getenv("FACECV_MYSQL_CHARSET") or os.getenv("MYSQL_CHARSET", "utf8mb4"),
             # SQLite配置
-            sqlite_filename=os.getenv("FACECV_SQLITE_FILENAME", "facecv.db"),
+            sqlite_filename=os.getenv("FACECV_SQLITE_FILENAME") or os.getenv("SQLITE_FILENAME", "facecv.db"),
             # ChromaDB配置
-            chromadb_dirname=os.getenv("FACECV_CHROMADB_DIRNAME", "chromadb_data"),
-            chromadb_collection_name=os.getenv("FACECV_CHROMADB_COLLECTION_NAME", "face_embeddings"),
+            chromadb_dirname=os.getenv("FACECV_CHROMADB_DIRNAME") or os.getenv("CHROMADB_DIRNAME", "chromadb_data"),
+            chromadb_collection_name=os.getenv("FACECV_CHROMADB_COLLECTION_NAME") or os.getenv("CHROMADB_COLLECTION_NAME", "face_embeddings"),
             # 连接池配置
-            pool_size=int(os.getenv("FACECV_DB_POOL_SIZE", "10")),
-            max_overflow=int(os.getenv("FACECV_DB_MAX_OVERFLOW", "20")),
-            pool_timeout=int(os.getenv("FACECV_DB_POOL_TIMEOUT", "30")),
-            pool_recycle=int(os.getenv("FACECV_DB_POOL_RECYCLE", "3600")),
+            pool_size=int(os.getenv("FACECV_DB_POOL_SIZE") or os.getenv("DB_POOL_SIZE", "10")),
+            max_overflow=int(os.getenv("FACECV_DB_MAX_OVERFLOW") or os.getenv("DB_MAX_OVERFLOW", "20")),
+            pool_timeout=int(os.getenv("FACECV_DB_POOL_TIMEOUT") or os.getenv("DB_POOL_TIMEOUT", "30")),
+            pool_recycle=int(os.getenv("FACECV_DB_POOL_RECYCLE") or os.getenv("DB_POOL_RECYCLE", "3600")),
             # 超时配置
-            connect_timeout=int(os.getenv("FACECV_DB_CONNECT_TIMEOUT", "30")),
-            read_timeout=int(os.getenv("FACECV_DB_READ_TIMEOUT", "60")),
-            write_timeout=int(os.getenv("FACECV_DB_WRITE_TIMEOUT", "60"))
+            connect_timeout=int(os.getenv("FACECV_DB_CONNECT_TIMEOUT") or os.getenv("DB_CONNECT_TIMEOUT", "30")),
+            read_timeout=int(os.getenv("FACECV_DB_READ_TIMEOUT") or os.getenv("DB_READ_TIMEOUT", "60")),
+            write_timeout=int(os.getenv("FACECV_DB_WRITE_TIMEOUT") or os.getenv("DB_WRITE_TIMEOUT", "60"))
         )
     
     @property
@@ -153,7 +190,7 @@ class DatabaseConfig:
     
     def get_connection_params(self) -> dict:
         """获取连接参数"""
-        base_params = {
+        base_params: dict[str, object] = {
             "pool_size": self.pool_size,
             "max_overflow": self.max_overflow,
             "pool_timeout": self.pool_timeout,
@@ -161,14 +198,14 @@ class DatabaseConfig:
         }
         
         if self.db_type == "mysql":
-            base_params.update({
-                "connect_args": {
-                    "connect_timeout": self.connect_timeout,
-                    "read_timeout": self.read_timeout,
-                    "write_timeout": self.write_timeout,
-                    "charset": self.mysql_charset
-                }
-            })
+            result = dict(base_params)
+            result["connect_args"] = {
+                "connect_timeout": self.connect_timeout,
+                "read_timeout": self.read_timeout,
+                "write_timeout": self.write_timeout,
+                "charset": self.mysql_charset
+            }
+            return result
         
         return base_params
 
@@ -180,23 +217,12 @@ db_config = DatabaseConfig.from_env()
 SUPPORTED_DB_TYPES = ["sqlite", "mysql", "chromadb"]
 DEFAULT_DB_TYPE = "sqlite"
 DEFAULT_SQLITE_FILENAME = "facecv.db"
-DEFAULT_CHROMADB_DIRNAME = "chromadb_data"
-DEFAULT_COLLECTION_NAME = "face_embeddings"
+# ChromaDB配置应从环境变量加载，不应硬编码
 
-# 硬编码生产环境配置
-PRODUCTION_MYSQL_CONFIG = {
-    "host": "mysql",
-    "port": 3306,
-    "user": "root",
-    "password": "password",
-    "database": "facecv",
-    "charset": "utf8mb4"
-}
 
 def get_standardized_db_config(db_type: Optional[str] = None) -> DatabaseConfig:
     """获取标准化的数据库配置"""
+    config = DatabaseConfig.from_env()
     if db_type:
-        config = DatabaseConfig.from_env()
         config.db_type = db_type
-        return config
-    return db_config
+    return config
