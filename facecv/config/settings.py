@@ -8,6 +8,8 @@ import os
 import yaml
 from pathlib import Path
 
+MODEL_CONFIG_PATH = Path(__file__).parent / "model_config.yaml"
+
 class Settings(BaseSettings):
     """应用配置类 - 包含验证和路径标准化"""
     
@@ -217,10 +219,11 @@ class Settings(BaseSettings):
         use_enum_values = True  # 使用枚举值
 
 
+@lru_cache()
 def load_model_config(config_path: Optional[Union[str, Path]] = None, environment: str = "production") -> Dict[str, Any]:
     """Load model configuration from YAML file"""
     if config_path is None:
-        config_path = Path(__file__).parent / "model_config.yaml"
+        config_path = MODEL_CONFIG_PATH
     else:
         if isinstance(config_path, str):
             config_path = Path(config_path)

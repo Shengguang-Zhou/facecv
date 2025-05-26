@@ -186,8 +186,7 @@ DEFAULT_COLLECTION_NAME = "face_embeddings"
 
 def get_standardized_db_config(db_type: Optional[str] = None) -> DatabaseConfig:
     """获取标准化的数据库配置"""
+    config = DatabaseConfig.from_env()
     if db_type:
-        config = DatabaseConfig.from_env()
         config.db_type = db_type
-        return config
-    return db_config
+    return config
