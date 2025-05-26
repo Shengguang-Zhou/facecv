@@ -233,6 +233,7 @@ Thumbs.db
 # Test results
 test_results/
 test_output/
+tests/results/
 
 # Performance monitoring
 monitoring/
