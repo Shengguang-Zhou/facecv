@@ -72,6 +72,50 @@ class TestDatabaseConfig:
             assert "test-user" in conn_url
             assert "test-password" in conn_url
             assert "test-db" in conn_url
+    
+    def test_mysql_validation_missing_host(self):
+        """Test that MySQL validation fails when host is missing"""
+        with patch.dict(os.environ, {
+            "FACECV_DB_TYPE": "mysql",
+            "FACECV_MYSQL_HOST": "",
+            "FACECV_MYSQL_USER": "test-user",
+            "FACECV_MYSQL_PASSWORD": "test-password"
+        }):
+            with pytest.raises(ValueError, match="MySQL主机不能为空"):
+                DatabaseConfig.from_env()
+    
+    def test_mysql_validation_missing_user(self):
+        """Test that MySQL validation fails when user is missing"""
+        with patch.dict(os.environ, {
+            "FACECV_DB_TYPE": "mysql",
+            "FACECV_MYSQL_HOST": "test-host",
+            "FACECV_MYSQL_USER": "",
+            "FACECV_MYSQL_PASSWORD": "test-password"
+        }):
+            with pytest.raises(ValueError, match="MySQL用户名不能为空"):
+                DatabaseConfig.from_env()
+    
+    def test_mysql_validation_missing_password(self):
+        """Test that MySQL validation fails when password is missing"""
+        with patch.dict(os.environ, {
+            "FACECV_DB_TYPE": "mysql",
+            "FACECV_MYSQL_HOST": "test-host",
+            "FACECV_MYSQL_USER": "test-user",
+            "FACECV_MYSQL_PASSWORD": ""
+        }):
+            with pytest.raises(ValueError, match="MySQL密码不能为空"):
+                DatabaseConfig.from_env()
+    
+    def test_sqlite_no_validation_required(self):
+        """Test that SQLite doesn't require MySQL credentials"""
+        with patch.dict(os.environ, {
+            "FACECV_DB_TYPE": "sqlite",
+            "FACECV_MYSQL_HOST": "",
+            "FACECV_MYSQL_USER": "",
+            "FACECV_MYSQL_PASSWORD": ""
+        }):
+            db_config = DatabaseConfig.from_env()
+            assert db_config.db_type == "sqlite"
 
 
 class TestRuntimeConfig:

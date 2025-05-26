@@ -60,8 +60,13 @@ class DatabaseConfig:
         if not (1 <= self.mysql_port <= 65535):
             raise ValueError(f"MySQL端口号无效: {self.mysql_port}")
         
-        if self.db_type == "mysql" and not self.mysql_password:
-            raise ValueError("MySQL密码不能为空")
+        if self.db_type == "mysql":
+            if not self.mysql_host:
+                raise ValueError("MySQL主机不能为空 (设置 FACECV_MYSQL_HOST)")
+            if not self.mysql_user:
+                raise ValueError("MySQL用户名不能为空 (设置 FACECV_MYSQL_USER)")
+            if not self.mysql_password:
+                raise ValueError("MySQL密码不能为空 (设置 FACECV_MYSQL_PASSWORD)")
         
         if not (1 <= self.pool_size <= 100):
             raise ValueError(f"连接池大小无效: {self.pool_size}")
@@ -97,8 +102,8 @@ class DatabaseConfig:
             db_type=os.getenv("FACECV_DB_TYPE", "sqlite"),
             base_data_dir=os.getenv("FACECV_DATA_DIR", "./data"),
             db_dir=os.getenv("FACECV_DB_DIR", "./data/db"),
-            # MySQL配置 - 从环境变量加载
-            mysql_host=os.getenv("FACECV_MYSQL_HOST", ""),
+            # MySQL配置 - 使用安全的本地默认值
+            mysql_host=os.getenv("FACECV_MYSQL_HOST", "localhost"),
             mysql_port=int(os.getenv("FACECV_MYSQL_PORT", "3306")),
             mysql_user=os.getenv("FACECV_MYSQL_USER", ""),
             mysql_password=os.getenv("FACECV_MYSQL_PASSWORD", ""),
@@ -180,8 +185,7 @@ db_config = DatabaseConfig.from_env()
 SUPPORTED_DB_TYPES = ["sqlite", "mysql", "chromadb"]
 DEFAULT_DB_TYPE = "sqlite"
 DEFAULT_SQLITE_FILENAME = "facecv.db"
-DEFAULT_CHROMADB_DIRNAME = "chromadb_data"
-DEFAULT_COLLECTION_NAME = "face_embeddings"
+# ChromaDB配置应从环境变量加载，不应硬编码
 
 
 def get_standardized_db_config(db_type: Optional[str] = None) -> DatabaseConfig:
