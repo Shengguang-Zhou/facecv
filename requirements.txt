@@ -56,7 +56,7 @@ requests==2.32.3
 # Development & Testing (Optional)
 pytest==8.3.5
 pytest-asyncio==0.26.0
-
+chromadb
 # GPU Support (Optional - for CUDA acceleration)
 # comment if you dont have NVIDIA GPU:
 # torch==2.7.0

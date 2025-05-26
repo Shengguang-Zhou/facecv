@@ -219,7 +219,6 @@ DEFAULT_DB_TYPE = "sqlite"
 DEFAULT_SQLITE_FILENAME = "facecv.db"
 # ChromaDB配置应从环境变量加载，不应硬编码
 
-
 def get_standardized_db_config(db_type: Optional[str] = None) -> DatabaseConfig:
     """获取标准化的数据库配置"""
     config = DatabaseConfig.from_env()
