@@ -68,7 +68,13 @@ class Settings(BaseSettings):
     
     # 数据库配置
     db_type: Literal["sqlite", "mysql", "chromadb"] = Field(default="sqlite", description="数据库类型")
-    db_connection_string: str = Field(default="sqlite:///data/db/facecv.db", description="数据库连接串")
+    db_connection_string: Optional[str] = Field(default=None, description="数据库连接串")
+    
+    mysql_host: str = Field(default="localhost", description="MySQL主机地址")
+    mysql_port: int = Field(default=3306, description="MySQL端口")
+    mysql_user: str = Field(default="root", description="MySQL用户名")
+    mysql_password: str = Field(default="", description="MySQL密码")
+    mysql_database: str = Field(default="facecv", description="MySQL数据库名")
     
     # 标准化路径配置
     data_dir: str = Field(default="./data", description="数据目录")
@@ -121,11 +127,12 @@ class Settings(BaseSettings):
     @validator('db_connection_string')
     def validate_db_connection(cls, v, values):
         """验证数据库连接串格式"""
-        db_type = values.get('db_type', 'sqlite')
-        if db_type == 'sqlite' and not v.startswith('sqlite:///'):
-            raise ValueError('SQLite连接串必须以sqlite:///开头')
-        elif db_type == 'mysql' and not v.startswith(('mysql://', 'mysql+pymysql://')):
-            raise ValueError('MySQL连接串必须以mysql://或mysql+pymysql://开头')
+        if v is not None:
+            db_type = values.get('db_type', 'sqlite')
+            if db_type == 'sqlite' and not v.startswith('sqlite:///'):
+                raise ValueError('SQLite连接串必须以sqlite:///开头')
+            elif db_type == 'mysql' and not v.startswith(('mysql://', 'mysql+pymysql://')):
+                raise ValueError('MySQL连接串必须以mysql://或mysql+pymysql://开头')
         return v
     
     @validator('allowed_extensions')
@@ -154,15 +161,22 @@ class Settings(BaseSettings):
         return os.path.join(self.data_dir, relative_path)
     
     def get_db_path(self) -> str:
-        """获取数据库文件路径"""
-        if self.db_type == 'sqlite':
-            # 从连接串中提取路径
-            if self.db_connection_string.startswith('sqlite:///'):
+        """获取数据库文件路径或连接串"""
+        if self.db_connection_string is not None:
+            if self.db_type == 'sqlite' and self.db_connection_string.startswith('sqlite:///'):
                 db_file = self.db_connection_string[10:]  # 移除 'sqlite:///'
                 if not os.path.isabs(db_file):
                     return os.path.join(self.db_dir, os.path.basename(db_file))
                 return db_file
-        return self.db_connection_string
+            return self.db_connection_string
+        
+        if self.db_type == 'sqlite':
+            db_file = os.path.join(self.db_dir, 'facecv.db')
+            return f"sqlite:///{db_file}"
+        elif self.db_type == 'mysql':
+            return f"mysql+pymysql://{self.mysql_user}:{self.mysql_password}@{self.mysql_host}:{self.mysql_port}/{self.mysql_database}"
+        
+        return f"sqlite:///{os.path.join(self.db_dir, 'facecv.db')}"
     
     def get_log_path(self) -> Optional[str]:
         """获取日志文件路径"""
