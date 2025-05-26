@@ -98,31 +98,58 @@ class DatabaseConfig:
     @classmethod
     def from_env(cls) -> 'DatabaseConfig':
         """从环境变量创建配置（保留环境变量覆盖能力）"""
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        db_type = os.getenv("FACECV_DB_TYPE") or os.getenv("DB_TYPE", "sqlite")
+        if os.getenv("DB_TYPE"):
+            logger.warning("DB_TYPE 环境变量已弃用，请使用 FACECV_DB_TYPE")
+            
+        mysql_host = os.getenv("FACECV_MYSQL_HOST") or os.getenv("MYSQL_HOST", "localhost")
+        if os.getenv("MYSQL_HOST"):
+            logger.warning("MYSQL_HOST 环境变量已弃用，请使用 FACECV_MYSQL_HOST")
+            
+        mysql_port = os.getenv("FACECV_MYSQL_PORT") or os.getenv("MYSQL_PORT", "3306")
+        if os.getenv("MYSQL_PORT"):
+            logger.warning("MYSQL_PORT 环境变量已弃用，请使用 FACECV_MYSQL_PORT")
+            
+        mysql_user = os.getenv("FACECV_MYSQL_USER") or os.getenv("MYSQL_USER", "")
+        if os.getenv("MYSQL_USER"):
+            logger.warning("MYSQL_USER 环境变量已弃用，请使用 FACECV_MYSQL_USER")
+            
+        mysql_password = os.getenv("FACECV_MYSQL_PASSWORD") or os.getenv("MYSQL_PASSWORD", "")
+        if os.getenv("MYSQL_PASSWORD"):
+            logger.warning("MYSQL_PASSWORD 环境变量已弃用，请使用 FACECV_MYSQL_PASSWORD")
+            
+        mysql_database = os.getenv("FACECV_MYSQL_DATABASE") or os.getenv("MYSQL_DATABASE", "facecv")
+        if os.getenv("MYSQL_DATABASE"):
+            logger.warning("MYSQL_DATABASE 环境变量已弃用，请使用 FACECV_MYSQL_DATABASE")
+        
         return cls(
-            db_type=os.getenv("FACECV_DB_TYPE", "sqlite"),
-            base_data_dir=os.getenv("FACECV_DATA_DIR", "./data"),
-            db_dir=os.getenv("FACECV_DB_DIR", "./data/db"),
+            db_type=db_type,
+            base_data_dir=os.getenv("FACECV_DATA_DIR") or os.getenv("DATA_DIR", "./data"),
+            db_dir=os.getenv("FACECV_DB_DIR") or os.getenv("DB_DIR", "./data/db"),
             # MySQL配置 - 使用安全的本地默认值
-            mysql_host=os.getenv("FACECV_MYSQL_HOST", "localhost"),
-            mysql_port=int(os.getenv("FACECV_MYSQL_PORT", "3306")),
-            mysql_user=os.getenv("FACECV_MYSQL_USER", ""),
-            mysql_password=os.getenv("FACECV_MYSQL_PASSWORD", ""),
-            mysql_database=os.getenv("FACECV_MYSQL_DATABASE", "facecv"),
-            mysql_charset=os.getenv("FACECV_MYSQL_CHARSET", "utf8mb4"),
+            mysql_host=mysql_host,
+            mysql_port=int(mysql_port),
+            mysql_user=mysql_user,
+            mysql_password=mysql_password,
+            mysql_database=mysql_database,
+            mysql_charset=os.getenv("FACECV_MYSQL_CHARSET") or os.getenv("MYSQL_CHARSET", "utf8mb4"),
             # SQLite配置
-            sqlite_filename=os.getenv("FACECV_SQLITE_FILENAME", "facecv.db"),
+            sqlite_filename=os.getenv("FACECV_SQLITE_FILENAME") or os.getenv("SQLITE_FILENAME", "facecv.db"),
             # ChromaDB配置
-            chromadb_dirname=os.getenv("FACECV_CHROMADB_DIRNAME", "chromadb_data"),
-            chromadb_collection_name=os.getenv("FACECV_CHROMADB_COLLECTION_NAME", "face_embeddings"),
+            chromadb_dirname=os.getenv("FACECV_CHROMADB_DIRNAME") or os.getenv("CHROMADB_DIRNAME", "chromadb_data"),
+            chromadb_collection_name=os.getenv("FACECV_CHROMADB_COLLECTION_NAME") or os.getenv("CHROMADB_COLLECTION_NAME", "face_embeddings"),
             # 连接池配置
-            pool_size=int(os.getenv("FACECV_DB_POOL_SIZE", "10")),
-            max_overflow=int(os.getenv("FACECV_DB_MAX_OVERFLOW", "20")),
-            pool_timeout=int(os.getenv("FACECV_DB_POOL_TIMEOUT", "30")),
-            pool_recycle=int(os.getenv("FACECV_DB_POOL_RECYCLE", "3600")),
+            pool_size=int(os.getenv("FACECV_DB_POOL_SIZE") or os.getenv("DB_POOL_SIZE", "10")),
+            max_overflow=int(os.getenv("FACECV_DB_MAX_OVERFLOW") or os.getenv("DB_MAX_OVERFLOW", "20")),
+            pool_timeout=int(os.getenv("FACECV_DB_POOL_TIMEOUT") or os.getenv("DB_POOL_TIMEOUT", "30")),
+            pool_recycle=int(os.getenv("FACECV_DB_POOL_RECYCLE") or os.getenv("DB_POOL_RECYCLE", "3600")),
             # 超时配置
-            connect_timeout=int(os.getenv("FACECV_DB_CONNECT_TIMEOUT", "30")),
-            read_timeout=int(os.getenv("FACECV_DB_READ_TIMEOUT", "60")),
-            write_timeout=int(os.getenv("FACECV_DB_WRITE_TIMEOUT", "60"))
+            connect_timeout=int(os.getenv("FACECV_DB_CONNECT_TIMEOUT") or os.getenv("DB_CONNECT_TIMEOUT", "30")),
+            read_timeout=int(os.getenv("FACECV_DB_READ_TIMEOUT") or os.getenv("DB_READ_TIMEOUT", "60")),
+            write_timeout=int(os.getenv("FACECV_DB_WRITE_TIMEOUT") or os.getenv("DB_WRITE_TIMEOUT", "60"))
         )
     
     @property

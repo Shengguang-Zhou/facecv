@@ -222,6 +222,9 @@ class Settings(BaseSettings):
 @lru_cache()
 def load_model_config(config_path: Optional[Union[str, Path]] = None, environment: str = "production") -> Dict[str, Any]:
     """Load model configuration from YAML file"""
+    import logging
+    logger = logging.getLogger(__name__)
+    
     if config_path is None:
         config_path = MODEL_CONFIG_PATH
     else:
@@ -238,11 +241,17 @@ def load_model_config(config_path: Optional[Union[str, Path]] = None, environmen
             config = _merge_configs(config, env_config)
         
         return config
-    except FileNotFoundError:
-        # Return default config if file not found
+    except FileNotFoundError as e:
+        logger.error(f"配置文件未找到: {config_path} - {e}")
+        logger.info("使用默认模型配置")
+        return _get_default_model_config()
+    except yaml.YAMLError as e:
+        logger.error(f"YAML解析错误: {e}")
+        logger.warning(f"配置文件 {config_path} 格式无效，使用默认配置")
         return _get_default_model_config()
     except Exception as e:
-        print(f"Warning: Failed to load model config: {e}")
+        logger.error(f"加载模型配置时出错: {e}")
+        logger.warning("使用默认模型配置")
         return _get_default_model_config()
 
 

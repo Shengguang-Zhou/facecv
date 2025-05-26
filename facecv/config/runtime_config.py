@@ -6,6 +6,11 @@
 
 from typing import Dict, Any, Optional
 import threading
+import logging
+
+from facecv.config.settings import get_settings
+
+logger = logging.getLogger(__name__)
 
 
 class RuntimeConfig:
@@ -51,16 +56,36 @@ class RuntimeConfig:
         return self._config.get(key, default)
     
     def set(self, key: str, value: Any) -> None:
-        """设置配置值"""
+        """设置配置值
+        
+        当配置值更改时，会清除设置缓存以确保获取最新配置
+        """
         self._config[key] = value
+        self._clear_config_caches()
     
     def update(self, config_dict: Dict[str, Any]) -> None:
-        """批量更新配置"""
+        """批量更新配置
+        
+        当配置值更改时，会清除设置缓存以确保获取最新配置
+        """
         self._config.update(config_dict)
+        self._clear_config_caches()
     
     def reset(self) -> None:
-        """重置为默认配置"""
+        """重置为默认配置
+        
+        重置后会清除设置缓存以确保获取最新配置
+        """
         self._initialize_defaults()
+        self._clear_config_caches()
+    
+    def _clear_config_caches(self) -> None:
+        """清除所有配置相关的缓存"""
+        try:
+            get_settings.cache_clear()
+            logger.debug("配置缓存已清除")
+        except Exception as e:
+            logger.warning(f"清除配置缓存时出错: {e}")
     
     def get_all(self) -> Dict[str, Any]:
         """获取所有配置"""
