@@ -77,7 +77,7 @@ services:
 ### 环境变量配置
 ```env
 # 数据库配置
-DATABASE_URL=mysql://root:Zsg20010115_@eurekailab.mysql.rds.aliyuncs.com:3306/facecv
+DATABASE_URL=....
 DB_TYPE=mysql
 
 # 模型配置

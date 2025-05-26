@@ -22,10 +22,10 @@ class DatabaseConfig:
     db_dir: str = "./data/db"
     
     # MySQL配置
-    mysql_host: str = "eurekailab.mysql.rds.aliyuncs.com"  # 硬编码生产环境
+    mysql_host: str = "mysql"  # 硬编码生产环境
     mysql_port: int = 3306
     mysql_user: str = "root"
-    mysql_password: str = "Zsg20010115_"  # 硬编码密码（按用户要求）
+    mysql_password: str = "password"  # 硬编码密码（按用户要求）
     mysql_database: str = "facecv"
     mysql_charset: str = "utf8mb4"
     
@@ -101,7 +101,7 @@ class DatabaseConfig:
             mysql_host=os.getenv("FACECV_MYSQL_HOST", "eurekailab.mysql.rds.aliyuncs.com"),
             mysql_port=int(os.getenv("FACECV_MYSQL_PORT", "3306")),
             mysql_user=os.getenv("FACECV_MYSQL_USER", "root"),
-            mysql_password=os.getenv("FACECV_MYSQL_PASSWORD", "Zsg20010115_"),
+            mysql_password=os.getenv("FACECV_MYSQL_PASSWORD", "password"),
             mysql_database=os.getenv("FACECV_MYSQL_DATABASE", "facecv"),
             mysql_charset=os.getenv("FACECV_MYSQL_CHARSET", "utf8mb4"),
             # SQLite配置
@@ -185,10 +185,10 @@ DEFAULT_COLLECTION_NAME = "face_embeddings"
 
 # 硬编码生产环境配置
 PRODUCTION_MYSQL_CONFIG = {
-    "host": "eurekailab.mysql.rds.aliyuncs.com",
+    "host": "mysql",
     "port": 3306,
     "user": "root",
-    "password": "Zsg20010115_",
+    "password": "password",
     "database": "facecv",
     "charset": "utf8mb4"
 }
