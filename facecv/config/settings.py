@@ -1,6 +1,6 @@
 """应用配置"""
 
-from typing import List, Optional, Dict, Any, Literal
+from typing import List, Optional, Dict, Any, Literal, Union
 from functools import lru_cache
 from pydantic_settings import BaseSettings
 from pydantic import validator, Field
@@ -41,13 +41,10 @@ class Settings(BaseSettings):
         description="ArcFace骨干网络 - resnet50(平衡), resnet100(最佳精度), resnet18(快速), mobilefacenet(移动端)"
     )
     arcface_dataset: Literal["ms1mv2", "ms1mv3", "glint360k", "webface600k"] = Field(
-        default="ms1mv3", 
-        description="ArcFace训练数据集 - ms1mv3(推荐), glint360k(大规模), ms1mv2(经典), webface600k(多样性)"
+        default="webface600k", 
+        description="ArcFace训练数据集 - webface600k(推荐), ms1mv3(通用), glint360k(大规模), ms1mv2(经典)"
     )
-    arcface_embedding_size: Literal[128, 256, 512] = Field(
-        default=512, 
-        description="ArcFace特征向量维度 - 512(标准), 256(紧凑), 128(极简)"
-    )
+    arcface_embedding_size: int = Field(default=512, ge=128, le=2048, description="ArcFace特征向量维度")
     arcface_margin: float = Field(default=0.5, ge=0.1, le=1.0, description="ArcFace角度边界参数")
     arcface_scale: float = Field(default=64.0, ge=16.0, le=128.0, description="ArcFace缩放参数")
     arcface_auto_download: bool = Field(default=True, description="自动下载ArcFace模型权重")
@@ -77,18 +74,6 @@ class Settings(BaseSettings):
     log_dir: str = Field(default="./data/logs", description="日志目录")
     model_cache_dir: str = Field(default="./models", description="模型缓存目录")
     upload_dir: str = Field(default="./data/uploads", description="上传文件目录")
-    
-    # ArcFace 专用配置
-    arcface_enabled: bool = Field(default=False, description="启用专用ArcFace模型 (替代buffalo)")
-    arcface_backbone: Literal["resnet18", "resnet34", "resnet50", "resnet100", "mobilefacenet"] = Field(
-        default="resnet50", 
-        description="ArcFace骨干网络 - resnet50(平衡), resnet100(最佳精度), resnet18(快速), mobilefacenet(移动端)"
-    )
-    arcface_dataset: Literal["ms1mv3", "webface600k", "glint360k"] = Field(
-        default="webface600k", 
-        description="ArcFace训练数据集 - webface600k(推荐), ms1mv3(通用), glint360k(大规模)"
-    )
-    arcface_embedding_size: int = Field(default=512, ge=128, le=2048, description="ArcFace特征向量维度")
     
     # 性能配置
     batch_size: int = Field(default=32, ge=1, le=512, description="批处理大小")
@@ -203,13 +188,13 @@ class Settings(BaseSettings):
         """获取模型缓存路径"""
         return os.path.join(self.model_cache_dir, model_name)
     
-    def get_arcface_weights_path(self, backbone: str = None, dataset: str = None) -> str:
+    def get_arcface_weights_path(self, backbone: Optional[str] = None, dataset: Optional[str] = None) -> str:
         """获取ArcFace权重路径"""
         backbone = backbone or self.arcface_backbone
         dataset = dataset or self.arcface_dataset
         return os.path.join(self.arcface_weights_dir, backbone, dataset)
     
-    def get_arcface_model_path(self, backbone: str = None, dataset: str = None, filename: str = None) -> str:
+    def get_arcface_model_path(self, backbone: Optional[str] = None, dataset: Optional[str] = None, filename: Optional[str] = None) -> str:
         """获取ArcFace模型文件完整路径"""
         base_path = self.get_arcface_weights_path(backbone, dataset)
         if filename:
@@ -232,13 +217,16 @@ class Settings(BaseSettings):
         use_enum_values = True  # 使用枚举值
 
 
-def load_model_config(config_path: Optional[str] = None, environment: str = "production") -> Dict[str, Any]:
+def load_model_config(config_path: Optional[Union[str, Path]] = None, environment: str = "production") -> Dict[str, Any]:
     """Load model configuration from YAML file"""
     if config_path is None:
         config_path = Path(__file__).parent / "model_config.yaml"
+    else:
+        if isinstance(config_path, str):
+            config_path = Path(config_path)
     
     try:
-        with open(config_path, 'r', encoding='utf-8') as f:
+        with config_path.open('r', encoding='utf-8') as f:
             config = yaml.safe_load(f)
         
         # Apply environment-specific overrides

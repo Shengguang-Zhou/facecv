@@ -22,10 +22,10 @@ class DatabaseConfig:
     db_dir: str = "./data/db"
     
     # MySQL配置
-    mysql_host: str = "mysql"  # 硬编码生产环境
+    mysql_host: str = ""  # 从环境变量加载
     mysql_port: int = 3306
-    mysql_user: str = "root"
-    mysql_password: str = "password"  # 硬编码密码（按用户要求）
+    mysql_user: str = ""
+    mysql_password: str = ""  # 从环境变量加载
     mysql_database: str = "facecv"
     mysql_charset: str = "utf8mb4"
     
@@ -97,11 +97,11 @@ class DatabaseConfig:
             db_type=os.getenv("FACECV_DB_TYPE", "sqlite"),
             base_data_dir=os.getenv("FACECV_DATA_DIR", "./data"),
             db_dir=os.getenv("FACECV_DB_DIR", "./data/db"),
-            # MySQL配置 - 硬编码默认值，但允许环境变量覆盖
-            mysql_host=os.getenv("FACECV_MYSQL_HOST", "eurekailab.mysql.rds.aliyuncs.com"),
+            # MySQL配置 - 从环境变量加载
+            mysql_host=os.getenv("FACECV_MYSQL_HOST", ""),
             mysql_port=int(os.getenv("FACECV_MYSQL_PORT", "3306")),
-            mysql_user=os.getenv("FACECV_MYSQL_USER", "root"),
-            mysql_password=os.getenv("FACECV_MYSQL_PASSWORD", "password"),
+            mysql_user=os.getenv("FACECV_MYSQL_USER", ""),
+            mysql_password=os.getenv("FACECV_MYSQL_PASSWORD", ""),
             mysql_database=os.getenv("FACECV_MYSQL_DATABASE", "facecv"),
             mysql_charset=os.getenv("FACECV_MYSQL_CHARSET", "utf8mb4"),
             # SQLite配置
@@ -153,7 +153,7 @@ class DatabaseConfig:
     
     def get_connection_params(self) -> dict:
         """获取连接参数"""
-        base_params = {
+        base_params: dict[str, object] = {
             "pool_size": self.pool_size,
             "max_overflow": self.max_overflow,
             "pool_timeout": self.pool_timeout,
@@ -161,14 +161,14 @@ class DatabaseConfig:
         }
         
         if self.db_type == "mysql":
-            base_params.update({
-                "connect_args": {
-                    "connect_timeout": self.connect_timeout,
-                    "read_timeout": self.read_timeout,
-                    "write_timeout": self.write_timeout,
-                    "charset": self.mysql_charset
-                }
-            })
+            result = dict(base_params)
+            result["connect_args"] = {
+                "connect_timeout": self.connect_timeout,
+                "read_timeout": self.read_timeout,
+                "write_timeout": self.write_timeout,
+                "charset": self.mysql_charset
+            }
+            return result
         
         return base_params
 
@@ -183,15 +183,6 @@ DEFAULT_SQLITE_FILENAME = "facecv.db"
 DEFAULT_CHROMADB_DIRNAME = "chromadb_data"
 DEFAULT_COLLECTION_NAME = "face_embeddings"
 
-# 硬编码生产环境配置
-PRODUCTION_MYSQL_CONFIG = {
-    "host": "mysql",
-    "port": 3306,
-    "user": "root",
-    "password": "password",
-    "database": "facecv",
-    "charset": "utf8mb4"
-}
 
 def get_standardized_db_config(db_type: Optional[str] = None) -> DatabaseConfig:
     """获取标准化的数据库配置"""

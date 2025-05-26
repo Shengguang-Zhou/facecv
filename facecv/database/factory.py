@@ -4,7 +4,9 @@ import logging
 from typing import Optional, Type
 from .abstract_facedb import AbstractFaceDB
 from .sqlite_facedb import SQLiteFaceDB
-from ..config.database import db_config
+from ..config import get_db_config
+
+db_config = get_db_config()
 
 # 延迟导入以避免依赖问题
 _mysql_facedb = None
