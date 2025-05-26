@@ -27,7 +27,7 @@ insightface>=0.7.3
 deepface>=0.0.79
 
 # ===== Vector Database =====
-chromadb>=0.4.18
+chromadb>=1.0.10
 
 # ===== Utilities =====
 scikit-learn>=1.3.0,<1.4.0
