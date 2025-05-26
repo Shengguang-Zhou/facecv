@@ -1,0 +1,25 @@
+# FaceCV Minimal Requirements
+# Core dependencies only - no ML models
+
+# Core
+numpy==1.24.3
+Pillow==10.1.0
+
+# Web framework
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+pydantic==2.5.0
+pydantic-settings==2.1.0
+python-multipart==0.0.6
+aiofiles==23.2.1
+
+# Database
+SQLAlchemy==2.0.23
+python-dotenv==1.0.0
+
+# Utils
+requests==2.31.0
+loguru==0.7.2
+
+# Performance monitoring
+psutil==5.9.6

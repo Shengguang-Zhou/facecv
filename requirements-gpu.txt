@@ -1,0 +1,27 @@
+# FaceCV GPU Requirements
+# For systems with NVIDIA GPU support
+
+-r requirements.txt
+
+# PyTorch with CUDA support
+--index-url https://download.pytorch.org/whl/cu118
+torch==2.1.1+cu118
+torchvision==0.16.1+cu118
+
+# ONNX Runtime with GPU support
+onnxruntime-gpu==1.16.3
+
+# Face recognition with GPU
+insightface==0.7.3
+deepface==0.0.79
+
+# TensorFlow GPU (for some DeepFace models)
+# tensorflow-gpu==2.13.0
+
+# CUDA-accelerated image processing
+cucim==23.12.0
+cupy-cuda11x==12.3.0
+
+# GPU monitoring
+nvidia-ml-py==12.535.133
+gpustat==1.1.1
