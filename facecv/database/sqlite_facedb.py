@@ -89,6 +89,13 @@ class SQLiteFaceDB(AbstractFaceDB):
     def add_face(self, name: str, embedding: np.ndarray, metadata: Optional[Dict] = None) -> str:
         """添加人脸到数据库"""
         face_id = str(uuid.uuid4())
+        
+        # Convert embedding to numpy array if it's a list
+        if isinstance(embedding, list):
+            embedding = np.array(embedding, dtype=np.float32)
+        elif not isinstance(embedding, np.ndarray):
+            embedding = np.array(embedding, dtype=np.float32)
+            
         embedding_bytes = embedding.tobytes()
         metadata_json = json.dumps(metadata) if metadata else None
         
@@ -114,11 +121,18 @@ class SQLiteFaceDB(AbstractFaceDB):
         
     def delete_face_by_id(self, face_id: str) -> bool:
         """根据 ID 删除人脸"""
-        with sqlite3.connect(self.db_path) as conn:
+        if self._connection:
+            conn = self._connection
             cursor = conn.cursor()
             cursor.execute("DELETE FROM faces WHERE id = ?", (face_id,))
             conn.commit()
             return cursor.rowcount > 0
+        else:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute("DELETE FROM faces WHERE id = ?", (face_id,))
+                conn.commit()
+                return cursor.rowcount > 0
     
     def delete_face(self, face_id: str) -> bool:
         """Alias for delete_face_by_id for API compatibility"""
@@ -126,36 +140,80 @@ class SQLiteFaceDB(AbstractFaceDB):
             
     def delete_face_by_name(self, name: str) -> int:
         """根据姓名删除所有相关人脸"""
-        with sqlite3.connect(self.db_path) as conn:
+        if self._connection:
+            conn = self._connection
             cursor = conn.cursor()
             cursor.execute("DELETE FROM faces WHERE name = ?", (name,))
             conn.commit()
             return cursor.rowcount
+        else:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute("DELETE FROM faces WHERE name = ?", (name,))
+                conn.commit()
+                return cursor.rowcount
             
-    def update_face(self, face_id: str, new_name: str, metadata: Optional[Dict] = None) -> bool:
+    def update_face(self, face_id: str, new_name: str = None, embedding: np.ndarray = None, metadata: Optional[Dict] = None) -> bool:
         """更新人脸信息"""
-        metadata_json = json.dumps(metadata) if metadata else None
+        # Get current face info
+        current_face = self.get_face_by_id(face_id)
+        if not current_face:
+            return False
+            
+        # Use current values as defaults
+        update_name = new_name if new_name is not None else current_face['name']
+        update_metadata = metadata if metadata is not None else current_face.get('metadata')
+        metadata_json = json.dumps(update_metadata) if update_metadata else None
         
-        with sqlite3.connect(self.db_path) as conn:
+        # Convert embedding if provided
+        if embedding is not None:
+            if isinstance(embedding, list):
+                embedding = np.array(embedding, dtype=np.float32)
+            elif not isinstance(embedding, np.ndarray):
+                embedding = np.array(embedding, dtype=np.float32)
+            embedding_bytes = embedding.tobytes()
+        else:
+            embedding_bytes = None
+        
+        if self._connection:
+            conn = self._connection
             cursor = conn.cursor()
-            if metadata is not None:
+            if embedding_bytes is not None:
+                cursor.execute("""
+                    UPDATE faces 
+                    SET name = ?, embedding = ?, metadata = ?, updated_at = CURRENT_TIMESTAMP
+                    WHERE id = ?
+                """, (update_name, embedding_bytes, metadata_json, face_id))
+            else:
                 cursor.execute("""
                     UPDATE faces 
                     SET name = ?, metadata = ?, updated_at = CURRENT_TIMESTAMP
                     WHERE id = ?
-                """, (new_name, metadata_json, face_id))
-            else:
-                cursor.execute("""
-                    UPDATE faces 
-                    SET name = ?, updated_at = CURRENT_TIMESTAMP
-                    WHERE id = ?
-                """, (new_name, face_id))
+                """, (update_name, metadata_json, face_id))
             conn.commit()
             return cursor.rowcount > 0
+        else:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                if embedding_bytes is not None:
+                    cursor.execute("""
+                        UPDATE faces 
+                        SET name = ?, embedding = ?, metadata = ?, updated_at = CURRENT_TIMESTAMP
+                        WHERE id = ?
+                    """, (update_name, embedding_bytes, metadata_json, face_id))
+                else:
+                    cursor.execute("""
+                        UPDATE faces 
+                        SET name = ?, metadata = ?, updated_at = CURRENT_TIMESTAMP
+                        WHERE id = ?
+                    """, (update_name, metadata_json, face_id))
+                conn.commit()
+                return cursor.rowcount > 0
             
     def query_faces_by_name(self, name: str) -> List[Dict[str, Any]]:
         """根据姓名查询人脸"""
-        with sqlite3.connect(self.db_path) as conn:
+        if self._connection:
+            conn = self._connection
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
             cursor.execute("""
@@ -176,6 +234,28 @@ class SQLiteFaceDB(AbstractFaceDB):
                 results.append(face_dict)
                 
             return results
+        else:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT id, name, embedding, metadata, created_at, updated_at
+                    FROM faces WHERE name = ?
+                """, (name,))
+                
+                results = []
+                for row in cursor.fetchall():
+                    face_dict = dict(row)
+                    # 转换 embedding
+                    face_dict['embedding'] = np.frombuffer(
+                        face_dict['embedding'], dtype=np.float32
+                    )
+                    # 解析 metadata
+                    if face_dict['metadata']:
+                        face_dict['metadata'] = json.loads(face_dict['metadata'])
+                    results.append(face_dict)
+                    
+                return results
             
     def query_faces_by_embedding(self, embedding: np.ndarray, top_k: int = 10) -> List[Dict[str, Any]]:
         """根据特征向量查询相似人脸"""
@@ -236,7 +316,8 @@ class SQLiteFaceDB(AbstractFaceDB):
         
     def get_face_by_id(self, face_id: str) -> Optional[Dict[str, Any]]:
         """根据 ID 获取人脸信息"""
-        with sqlite3.connect(self.db_path) as conn:
+        if self._connection:
+            conn = self._connection
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
             cursor.execute("""
@@ -254,10 +335,30 @@ class SQLiteFaceDB(AbstractFaceDB):
                     face_dict['metadata'] = json.loads(face_dict['metadata'])
                 return face_dict
             return None
+        else:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT id, name, embedding, metadata, created_at, updated_at
+                    FROM faces WHERE id = ?
+                """, (face_id,))
+                
+                row = cursor.fetchone()
+                if row:
+                    face_dict = dict(row)
+                    face_dict['embedding'] = np.frombuffer(
+                        face_dict['embedding'], dtype=np.float32
+                    )
+                    if face_dict['metadata']:
+                        face_dict['metadata'] = json.loads(face_dict['metadata'])
+                    return face_dict
+                return None
             
     def get_all_faces(self) -> List[Dict[str, Any]]:
         """获取所有人脸信息"""
-        with sqlite3.connect(self.db_path) as conn:
+        if self._connection:
+            conn = self._connection
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
             cursor.execute("""
@@ -276,10 +377,31 @@ class SQLiteFaceDB(AbstractFaceDB):
                 results.append(face_dict)
                 
             return results
+        else:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT id, name, embedding, metadata, created_at, updated_at
+                    FROM faces
+                """)
+                
+                results = []
+                for row in cursor.fetchall():
+                    face_dict = dict(row)
+                    face_dict['embedding'] = np.frombuffer(
+                        face_dict['embedding'], dtype=np.float32
+                    )
+                    if face_dict['metadata']:
+                        face_dict['metadata'] = json.loads(face_dict['metadata'])
+                    results.append(face_dict)
+                    
+                return results
             
     def get_all_faces_for_recognition(self) -> List[Dict[str, Any]]:
         """获取所有用于识别的人脸"""
-        with sqlite3.connect(self.db_path) as conn:
+        if self._connection:
+            conn = self._connection
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
             cursor.execute("""
@@ -298,18 +420,59 @@ class SQLiteFaceDB(AbstractFaceDB):
                 results.append(face_dict)
                 
             return results
+        else:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT id, name, embedding, metadata, created_at, updated_at
+                    FROM faces WHERE is_temporary = 0
+                """)
+                
+                results = []
+                for row in cursor.fetchall():
+                    face_dict = dict(row)
+                    face_dict['embedding'] = np.frombuffer(
+                        face_dict['embedding'], dtype=np.float32
+                    )
+                    if face_dict['metadata']:
+                        face_dict['metadata'] = json.loads(face_dict['metadata'])
+                    results.append(face_dict)
+                    
+                return results
             
     def get_face_count(self) -> int:
         """获取数据库中的人脸总数"""
-        with sqlite3.connect(self.db_path) as conn:
+        if self._connection:
+            conn = self._connection
             cursor = conn.cursor()
             cursor.execute("SELECT COUNT(*) FROM faces")
             return cursor.fetchone()[0]
+        else:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT COUNT(*) FROM faces")
+                return cursor.fetchone()[0]
             
     def clear_database(self) -> bool:
         """清空数据库"""
-        with sqlite3.connect(self.db_path) as conn:
+        if self._connection:
+            conn = self._connection
             cursor = conn.cursor()
             cursor.execute("DELETE FROM faces")
             conn.commit()
             return True
+        else:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute("DELETE FROM faces")
+                conn.commit()
+                return True
+    
+    def get_face(self, face_id: str) -> Optional[Dict[str, Any]]:
+        """Get face by ID - alias for get_face_by_id"""
+        return self.get_face_by_id(face_id)
+    
+    def get_faces_by_name(self, name: str) -> List[Dict[str, Any]]:
+        """Get faces by name - alias for query_faces_by_name"""
+        return self.query_faces_by_name(name)

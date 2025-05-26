@@ -1,0 +1,1 @@
+"""System health API tests"""

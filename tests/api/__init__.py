@@ -1,1 +1,1 @@
-"""API测试"""
+"""API Tests for FaceCV"""

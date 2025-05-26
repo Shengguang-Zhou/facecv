@@ -20,3 +20,4 @@
   * Configuration: Use .env file for database connection details
 - when you are doing testing, if its a temporary test, remove it after test, if its reusable or later will be used, put under test/ folder, same applied for log and sqlite.
 - when you are testing face, you can use this folder for your test: /home/a/PycharmProjects/EurekCV/dataset/faces
+- when testing missing dependency, use .venv to install

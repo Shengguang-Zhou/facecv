@@ -9,7 +9,6 @@ try:
     from facecv.models.insightface import InsightFaceRecognizer
 except ImportError:
     # 如果 InsightFace 未安装，使用模拟版本
-    from facecv.models.insightface.recognizer_mock import InsightFaceRecognizerMock as InsightFaceRecognizer
     logging.warning("Using mock InsightFaceRecognizer. Install insightface for real functionality.")
 from facecv.database.sqlite_facedb import SQLiteFaceDB
 from facecv.database.abstract_facedb import AbstractFaceDB

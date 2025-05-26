@@ -285,17 +285,23 @@ class CameraManager:
 # Global camera manager instance
 camera_manager = CameraManager()
 
-@router.post("/connect")
-async def connect_camera(
-    camera_id: str = Query(..., description="Unique camera identifier"),
-    source: str = Query(..., description="Camera source (0 for webcam, RTSP URL for IP camera)")
-):
-    """
-    Connect to a camera (local or RTSP)
+@router.post("/connect", 
+    summary="连接摄像头",
+    description="""连接到摄像头源（本地摄像头或RTSP流）并启动实时人脸识别。
     
-    - **camera_id**: Unique identifier for the camera
-    - **source**: Camera source (0 for local camera, RTSP URL for IP camera)
-    """
+    该接口初始化与指定摄像头的连接，并开始处理帧进行人脸检测和识别。
+    摄像头将在独立线程中运行，持续处理帧直到断开连接。
+    
+    **摄像头源：**
+    - 本地摄像头：使用 "0"、"1" 等（摄像头索引的字符串表示）
+    - RTSP流：使用完整的RTSP URL（例如："rtsp://username:password@ip:port/stream"）
+    
+    **注意：** 每个camera_id只允许一个连接。如果camera_id已连接，将先断开原有连接。
+    """)
+async def connect_camera(
+    camera_id: str = Query(..., description="唯一的摄像头标识符"),
+    source: str = Query(..., description="摄像头源（0表示网络摄像头，RTSP URL表示IP摄像头）")
+):
     try:
         success = camera_manager.connect_camera(camera_id, source)
         
@@ -316,15 +322,18 @@ async def connect_camera(
         logger.error(f"Error connecting camera {camera_id}: {e}")
         raise HTTPException(status_code=500, detail=f"Connection error: {str(e)}")
 
-@router.post("/disconnect")
-async def disconnect_camera(
-    camera_id: str = Query(..., description="Camera identifier to disconnect")
-):
-    """
-    Disconnect a camera and cleanup resources
+@router.post("/disconnect",
+    summary="断开摄像头连接",
+    description="""断开已连接的摄像头并清理所有相关资源。
     
-    - **camera_id**: Identifier of camera to disconnect
-    """
+    该接口停止摄像头处理线程，释放摄像头捕获对象，
+    并清理指定摄像头的所有存储帧和识别结果。
+    
+    **重要：** 使用完毕后请务必断开摄像头连接以释放系统资源。
+    """)
+async def disconnect_camera(
+    camera_id: str = Query(..., description="要断开连接的摄像头标识符")
+):
     try:
         success = camera_manager.disconnect_camera(camera_id)
         
@@ -344,15 +353,23 @@ async def disconnect_camera(
         logger.error(f"Error disconnecting camera {camera_id}: {e}")
         raise HTTPException(status_code=500, detail=f"Disconnection error: {str(e)}")
 
-@router.get("/status")
-async def get_camera_status(
-    camera_id: Optional[str] = Query(None, description="Specific camera ID (optional)")
-):
-    """
-    Get status of cameras
+@router.get("/status",
+    summary="获取摄像头状态",
+    description="""获取一个或所有摄像头的当前状态和人脸识别结果。
     
-    - **camera_id**: Specific camera ID to check (optional, returns all if not specified)
-    """
+    该接口返回已连接摄像头的实时信息，包括：
+    - 连接状态
+    - 最新检测到的人脸及识别结果
+    - 人脸属性（年龄、性别）（如果可用）
+    - 边界框和置信度分数
+    
+    **响应内容：**
+    - 指定摄像头：当前状态和最新人脸检测结果
+    - 所有摄像头：所有活动摄像头的摘要及其各自状态
+    """)
+async def get_camera_status(
+    camera_id: Optional[str] = Query(None, description="特定的摄像头ID（可选）")
+):
     try:
         status = camera_manager.get_camera_status(camera_id)
         return status
@@ -360,17 +377,30 @@ async def get_camera_status(
         logger.error(f"Error getting camera status: {e}")
         raise HTTPException(status_code=500, detail=f"Status error: {str(e)}")
 
-@router.get("/stream")
-async def stream_recognition_results(
-    camera_id: str = Query(..., description="Camera identifier"),
-    format: str = Query("json", description="Output format (json or sse)")
-):
-    """
-    Stream real-time recognition results from camera
+@router.get("/stream",
+    summary="流式传输识别结果", 
+    description="""从已连接的摄像头流式传输实时人脸识别结果。
     
-    - **camera_id**: Camera identifier
-    - **format**: Output format (json or sse for Server-Sent Events)
-    """
+    该接口提供人脸检测和识别结果的持续更新。
+    支持两种输出格式：
+    
+    **JSON格式：** 返回当前识别结果的单个JSON响应
+    
+    **SSE格式（服务器发送事件）：** 流式传输持续更新以进行实时监控
+    - 约每500毫秒发送一次更新
+    - 每个事件包含完整的识别结果
+    - 连接保持开放直到客户端断开或摄像头断开连接
+    
+    **识别结果包括：**
+    - 人脸边界框和跟踪ID
+    - 识别的人员姓名和置信度分数
+    - 人脸质量分数和检测置信度
+    - 可选：年龄、性别和面部特征点（如果可用）
+    """)
+async def stream_recognition_results(
+    camera_id: str = Query(..., description="摄像头标识符"),
+    format: str = Query("json", description="输出格式（json或sse）")
+):
     if camera_id not in camera_manager.camera_active:
         raise HTTPException(status_code=404, detail=f"Camera {camera_id} not found or not active")
     
@@ -400,23 +430,34 @@ async def stream_recognition_results(
         results = camera_manager.get_latest_results(camera_id)
         return results
 
-@router.get("/test/rtsp")
-async def test_rtsp_connection(
-    rtsp_url: str = Query(..., description="RTSP URL to test")
-):
-    """
-    Test RTSP connection without starting recognition
+@router.get("/test/rtsp",
+    summary="测试RTSP连接",
+    description="""测试RTSP摄像头流的连接性，不启动人脸识别。
     
-    - **rtsp_url**: RTSP URL to test
-    """
+    该接口用于在尝试连接进行持续处理之前验证RTSP URL。
+    测试步骤：
+    1. 连接到RTSP流
+    2. 读取单帧
+    3. 返回连接状态和帧信息
+    
+    **常见RTSP URL格式：**
+    - 通用格式：`rtsp://username:password@ip:port/stream`
+    - 海康威视：`rtsp://admin:password@192.168.1.100:554/Streaming/Channels/101`
+    - 大华：`rtsp://admin:password@192.168.1.100:554/cam/realmonitor?channel=1&subtype=0`
+    
+    **注意：** 这只是快速连接测试。实际人脸识别请使用 /connect 接口。
+    """)
+async def test_rtsp_connection(
+    url: str = Query(..., description="要测试的RTSP URL", alias="rtsp_url")
+):
     try:
-        cap = cv2.VideoCapture(rtsp_url)
+        cap = cv2.VideoCapture(url)
         
         if not cap.isOpened():
             return {
                 "success": False,
                 "message": "Failed to connect to RTSP stream",
-                "url": rtsp_url
+                "url": url
             }
         
         # Try to read a frame
@@ -427,13 +468,13 @@ async def test_rtsp_connection(
             return {
                 "success": False,
                 "message": "Connected but failed to read frame",
-                "url": rtsp_url
+                "url": url
             }
         
         return {
             "success": True,
             "message": "RTSP connection successful",
-            "url": rtsp_url,
+            "url": url,
             "frame_shape": frame.shape,
             "timestamp": datetime.now().isoformat()
         }
@@ -443,26 +484,46 @@ async def test_rtsp_connection(
         return {
             "success": False,
             "message": f"Connection error: {str(e)}",
-            "url": rtsp_url
+            "url": url
         }
 
-@router.get("/test/local")
-async def test_local_camera(
-    camera_index: int = Query(0, description="Local camera index (usually 0)")
-):
-    """
-    Test local camera connection
+@router.get("/test/local",
+    summary="测试本地摄像头",
+    description="""测试本地摄像头（网络摄像头）的连接性，不启动人脸识别。
     
-    - **camera_index**: Camera index (usually 0 for default camera)
-    """
+    该接口验证本地摄像头是否可访问并能够捕获帧。
+    适用于：
+    - 检查网络摄像头是否正确连接
+    - 确定系统上可用的摄像头索引
+    - 在开始识别前验证摄像头功能
+    
+    **摄像头索引：**
+    - 0：默认/主摄像头（通常是内置摄像头）
+    - 1、2等：按连接顺序的其他USB摄像头
+    
+    **注意：** 这只是快速连接测试。实际人脸识别请使用 /connect 接口。
+    """)
+async def test_local_camera(
+    camera_id: str = Query("0", description="本地摄像头ID（通常为0）")
+):
     try:
+        # Try to convert camera_id to int for local camera
+        try:
+            camera_index = int(camera_id)
+        except ValueError:
+            return {
+                "success": False,
+                "message": f"Invalid camera_id: {camera_id}. For local camera, use numeric ID like '0', '1', etc.",
+                "camera_id": camera_id
+            }
+        
         cap = cv2.VideoCapture(camera_index)
         
         if not cap.isOpened():
             return {
                 "success": False,
-                "message": f"Failed to connect to local camera {camera_index}",
-                "camera_index": camera_index
+                "message": f"Failed to connect to local camera {camera_id}",
+                "camera_id": camera_id
             }
         
         # Try to read a frame
@@ -472,14 +533,14 @@ async def test_local_camera(
         if not ret:
             return {
                 "success": False,
-                "message": f"Connected but failed to read frame from camera {camera_index}",
-                "camera_index": camera_index
+                "message": f"Connected but failed to read frame from camera {camera_id}",
+                "camera_id": camera_id
             }
         
         return {
             "success": True,
-            "message": f"Local camera {camera_index} connection successful",
-            "camera_index": camera_index,
+            "message": f"Local camera {camera_id} connection successful",
+            "camera_id": camera_id,
             "frame_shape": frame.shape,
             "timestamp": datetime.now().isoformat()
         }
@@ -489,5 +550,5 @@ async def test_local_camera(
         return {
             "success": False,
             "message": f"Camera error: {str(e)}",
-            "camera_index": camera_index
+            "camera_id": camera_id
         }

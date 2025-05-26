@@ -190,9 +190,8 @@ class ChromaFaceDB(AbstractFaceDB):
             logger.error(f"Error searching similar faces: {e}")
             return []
     
-    def update_face(self, face_id: str, embedding: Optional[List[float]] = None, 
-                   metadata: Optional[Dict] = None) -> bool:
-        """Update a face in the database"""
+    def update_face(self, face_id: str, new_name: str, metadata: Optional[Dict] = None) -> bool:
+        """Update a face in the database with new name and metadata"""
         try:
             # Get existing face
             existing = self.get_face(face_id)
@@ -201,6 +200,7 @@ class ChromaFaceDB(AbstractFaceDB):
             
             # Prepare update
             update_metadata = existing["metadata"].copy()
+            update_metadata["name"] = new_name
             update_metadata["updated_at"] = datetime.now().isoformat()
             
             if metadata:
@@ -210,20 +210,13 @@ class ChromaFaceDB(AbstractFaceDB):
                     else:
                         update_metadata[key] = json.dumps(value)
             
-            # Update in ChromaDB
-            if embedding:
-                self.collection.update(
-                    ids=[face_id],
-                    embeddings=[embedding],
-                    metadatas=[update_metadata]
-                )
-            else:
-                self.collection.update(
-                    ids=[face_id],
-                    metadatas=[update_metadata]
-                )
+            # Update in ChromaDB (metadata only, keep same embedding)
+            self.collection.update(
+                ids=[face_id],
+                metadatas=[update_metadata]
+            )
             
-            logger.info(f"Updated face {face_id}")
+            logger.info(f"Updated face {face_id} with new name: {new_name}")
             return True
             
         except Exception as e:
@@ -382,16 +375,30 @@ class ChromaFaceDB(AbstractFaceDB):
                 logger.warning("Cannot restore to in-memory database")
                 return False
             
-            # Close current client
-            del self.client
-            
             # Copy backup to persist directory
             import shutil
             shutil.rmtree(self.persist_directory, ignore_errors=True)
             shutil.copytree(backup_path, self.persist_directory)
             
-            # Reinitialize client
-            self.__init__(self.persist_directory, self.collection_name)
+            # Close and reinitialize client to force reload from disk
+            if hasattr(self, 'client'):
+                del self.client
+                
+            # Create new client pointing to restored directory
+            self.client = chromadb.PersistentClient(path=self.persist_directory)
+            
+            # Get the restored collection
+            try:
+                self.collection = self.client.get_collection(name=self.collection_name)
+                logger.info(f"Using existing collection: {self.collection_name}")
+            except Exception as e:
+                logger.error(f"Failed to get collection after restore: {e}")
+                # If collection doesn't exist, create it (shouldn't happen with proper backup)
+                self.collection = self.client.create_collection(
+                    name=self.collection_name,
+                    metadata={"hnsw:space": "cosine"}
+                )
+                logger.warning(f"Created new collection: {self.collection_name}")
             
             logger.info(f"Database restored from: {backup_path}")
             return True
@@ -399,86 +406,39 @@ class ChromaFaceDB(AbstractFaceDB):
         except Exception as e:
             logger.error(f"Error restoring database: {e}")
             return False
-
-
-# Mock implementation for when ChromaDB is not available
-class MockChromaFaceDB(AbstractFaceDB):
-    """Mock implementation when ChromaDB is not available"""
     
-    def __init__(self, *args, **kwargs):
-        logger.warning("Using mock ChromaDB implementation")
-        self.faces = {}
-        self.face_counter = 0
+    # Abstract method implementations
+    def delete_face_by_id(self, face_id: str) -> bool:
+        """Delete face by ID - alias for delete_face"""
+        return self.delete_face(face_id)
     
-    def add_face(self, name: str, embedding: List[float], metadata: Optional[Dict] = None) -> str:
-        self.face_counter += 1
-        face_id = f"mock_face_{self.face_counter}"
-        self.faces[face_id] = {
-            "id": face_id,
-            "name": name,
-            "embedding": embedding,
-            "metadata": metadata or {},
-            "created_at": datetime.now().isoformat(),
-            "updated_at": datetime.now().isoformat()
-        }
-        return face_id
+    def get_all_faces_for_recognition(self) -> List[Dict[str, Any]]:
+        """Get all faces for recognition"""
+        return self.get_all_faces()
     
-    def get_face(self, face_id: str) -> Optional[Dict]:
-        return self.faces.get(face_id)
+    def get_face_by_id(self, face_id: str) -> Optional[Dict[str, Any]]:
+        """Get face by ID - alias for get_face"""
+        return self.get_face(face_id)
     
-    def get_faces_by_name(self, name: str) -> List[Dict]:
-        return [face for face in self.faces.values() if face["name"] == name]
-    
-    def search_similar_faces(self, embedding: List[float], threshold: float = 0.6, limit: int = 10) -> List[Tuple[Dict, float]]:
-        # Simple cosine similarity for mock
+    def query_faces_by_embedding(self, embedding: np.ndarray, top_k: int = 10) -> List[Dict[str, Any]]:
+        """Query faces by embedding vector"""
+        # Convert numpy array to list
+        embedding_list = embedding.tolist() if isinstance(embedding, np.ndarray) else embedding
+        
+        # Use existing search method but return in expected format
+        similar_faces = self.search_similar_faces(embedding_list, threshold=0.0, limit=top_k)
+        
+        # Convert to expected format
         results = []
+        for face_dict, similarity in similar_faces:
+            face_copy = face_dict.copy()
+            face_copy['similarity_score'] = similarity
+            results.append(face_copy)
         
-        for face in self.faces.values():
-            # Calculate cosine similarity
-            embedding_np = np.array(embedding)
-            face_embedding_np = np.array(face["embedding"])
-            
-            similarity = np.dot(embedding_np, face_embedding_np) / (
-                np.linalg.norm(embedding_np) * np.linalg.norm(face_embedding_np)
-            )
-            
-            if similarity >= threshold:
-                results.append((face, float(similarity)))
-        
-        # Sort by similarity and limit
-        results.sort(key=lambda x: x[1], reverse=True)
-        return results[:limit]
+        return results
     
-    def update_face(self, face_id: str, embedding: Optional[List[float]] = None, 
-                   metadata: Optional[Dict] = None) -> bool:
-        if face_id in self.faces:
-            if embedding:
-                self.faces[face_id]["embedding"] = embedding
-            if metadata:
-                self.faces[face_id]["metadata"].update(metadata)
-            self.faces[face_id]["updated_at"] = datetime.now().isoformat()
-            return True
-        return False
-    
-    def delete_face(self, face_id: str) -> bool:
-        if face_id in self.faces:
-            del self.faces[face_id]
-            return True
-        return False
-    
-    def delete_face_by_name(self, name: str) -> int:
-        to_delete = [fid for fid, face in self.faces.items() if face["name"] == name]
-        for face_id in to_delete:
-            del self.faces[face_id]
-        return len(to_delete)
-    
-    def get_all_faces(self, limit: int = 1000) -> List[Dict]:
-        return list(self.faces.values())[:limit]
-    
-    def get_face_count(self) -> int:
-        return len(self.faces)
-    
-    def clear_database(self) -> bool:
-        self.faces.clear()
-        self.face_counter = 0
-        return True
+    def query_faces_by_name(self, name: str) -> List[Dict[str, Any]]:
+        """Query faces by name - alias for get_faces_by_name"""
+        return self.get_faces_by_name(name)
+
+

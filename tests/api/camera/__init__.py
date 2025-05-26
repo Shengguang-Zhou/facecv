@@ -1,0 +1,1 @@
+"""Camera streaming API tests"""

@@ -60,6 +60,8 @@ class VideoStreamProcessor:
         Returns:
             所有识别结果列表
         """
+        all_results = []  # Initialize results list first
+        
         try:
             # 打开视频源
             cap = cv2.VideoCapture(source)
@@ -76,7 +78,6 @@ class VideoStreamProcessor:
             logger.info("按 'q' 键退出")
             
             self.is_running = True
-            all_results = []
             
             # 启动推理线程
             inference_thread = threading.Thread(target=self._inference_worker)
@@ -131,7 +132,7 @@ class VideoStreamProcessor:
                         x1, y1, x2, y2 = result.bbox
                         cv2.rectangle(display_frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
                         
-                        label = f"{result.recognized_name}: {result.similarity_score:.2f}"
+                        label = f"{result.name}: {result.confidence:.2f}"
                         cv2.putText(display_frame, label, (x1, y1 - 10),
                                    cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
                                    

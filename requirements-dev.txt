@@ -3,35 +3,40 @@
 
 -r requirements.txt
 
-# Testing
+# ===== Testing Framework =====
 pytest==7.4.3
 pytest-asyncio==0.21.1
 pytest-cov==4.1.0
 pytest-mock==3.12.0
 pytest-benchmark==4.0.0
+pytest-xdist==3.4.0  # Parallel testing
 
-# Code quality
+# ===== Code Quality =====
 black==23.11.0
 isort==5.12.0
-flake8==6.1.0
+ruff==0.1.6  # Replaces flake8 + many plugins
 mypy==1.7.1
-ruff==0.1.6
+pre-commit==3.6.0
 
-# Documentation
+# ===== Documentation =====
 sphinx==7.2.6
 sphinx-rtd-theme==2.0.0
 myst-parser==2.0.0
 
-# Development tools
+# ===== Development Tools =====
 ipython==8.18.1
 jupyterlab==4.0.9
 rich==13.7.0
 
-# Profiling
+# ===== Performance Profiling =====
 memory-profiler==0.61.0
 line-profiler==4.1.1
 py-spy==0.3.14
 
-# API testing
+# ===== API Testing =====
 httpx==0.25.2
 locust==2.17.0
+
+# ===== Database Testing =====
+pytest-docker==2.0.1
+sqlalchemy-utils==0.41.1

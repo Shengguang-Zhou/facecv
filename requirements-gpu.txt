@@ -1,27 +1,67 @@
-# FaceCV GPU Requirements
-# For systems with NVIDIA GPU support
+# GPU-accelerated requirements for FaceCV
+# Includes CUDA support for NVIDIA GPUs
 
--r requirements.txt
+# Core FastAPI Application
+fastapi==0.115.9
+uvicorn==0.24.0
+pydantic==2.11.5
+pydantic-settings==2.9.1
+starlette==0.45.3
 
-# PyTorch with CUDA support
---index-url https://download.pytorch.org/whl/cu118
-torch==2.1.1+cu118
-torchvision==0.16.1+cu118
-
-# ONNX Runtime with GPU support
-onnxruntime-gpu==1.16.3
-
-# Face recognition with GPU
+# Face Recognition Libraries
 insightface==0.7.3
-deepface==0.0.79
+deepface==0.0.93
+mediapipe==0.10.21
 
-# TensorFlow GPU (for some DeepFace models)
-# tensorflow-gpu==2.13.0
+# GPU-Accelerated ML
+onnxruntime-gpu==1.16.3
+torch==2.7.0
+torchvision==0.22.0
+tensorflow==2.19.0
+tf-keras==2.19.0
+keras==3.10.0
 
-# CUDA-accelerated image processing
-cucim==23.12.0
-cupy-cuda11x==12.3.0
+# NVIDIA CUDA Dependencies
+nvidia-cuda-runtime-cu12==12.6.77
+nvidia-cudnn-cu12==9.5.1.17
+nvidia-cublas-cu12==12.6.4.1
+nvidia-cufft-cu12==11.3.0.4
+nvidia-curand-cu12==10.3.7.77
+nvidia-cusolver-cu12==11.7.1.2
+nvidia-cusparse-cu12==12.5.4.2
 
-# GPU monitoring
-nvidia-ml-py==12.535.133
-gpustat==1.1.1
+# Computer Vision
+opencv-python==4.11.0.86
+pillow==11.2.1
+numpy<2.0,>=1.24.0
+scikit-learn==1.6.1
+scikit-image==0.25.2
+
+# DeepFace Dependencies
+mtcnn==1.0.0
+retina-face==0.0.17
+
+# Database Libraries
+chromadb==0.4.24
+SQLAlchemy==2.0.23
+aiomysql==0.2.0
+PyMySQL==1.1.1
+aiosqlite==0.21.0
+
+# Async & HTTP
+aiohttp==3.8.6
+aiofiles==24.1.0
+httpx==0.28.1
+
+# Configuration & Utilities
+python-dotenv==1.0.1
+PyYAML==6.0.1
+loguru==0.7.2
+tqdm==4.67.1
+psutil==7.0.0
+
+# Scientific Computing
+scipy==1.15.2
+pandas==2.2.3
+typing-extensions==4.12.2
+requests==2.32.3

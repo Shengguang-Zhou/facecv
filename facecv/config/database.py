@@ -1,9 +1,10 @@
-"""数据库配置管理"""
+"""数据库配置管理 - 标准化路径和配置验证"""
 
 import os
-from typing import Optional
+from typing import Optional, Literal
 from dataclasses import dataclass
 from dotenv import load_dotenv
+from pathlib import Path
 
 # 加载环境变量
 load_dotenv()
@@ -11,23 +12,28 @@ load_dotenv()
 
 @dataclass
 class DatabaseConfig:
-    """数据库配置类"""
+    """数据库配置类 - 包含路径标准化和验证"""
     
     # 数据库类型
-    db_type: str = "sqlite"
+    db_type: str = "sqlite"  # sqlite, mysql, chromadb
+    
+    # 标准化路径配置
+    base_data_dir: str = "./data"
+    db_dir: str = "./data/db"
     
     # MySQL配置
-    mysql_host: str = "localhost"
+    mysql_host: str = "eurekailab.mysql.rds.aliyuncs.com"  # 硬编码生产环境
     mysql_port: int = 3306
     mysql_user: str = "root"
-    mysql_password: str = ""
+    mysql_password: str = "Zsg20010115_"  # 硬编码密码（按用户要求）
     mysql_database: str = "facecv"
+    mysql_charset: str = "utf8mb4"
     
-    # SQLite配置
-    sqlite_path: str = "facecv.db"
+    # SQLite配置 - 标准化路径
+    sqlite_filename: str = "facecv.db"
     
-    # ChromaDB配置
-    chromadb_path: str = "./chromadb_data"
+    # ChromaDB配置 - 标准化路径
+    chromadb_dirname: str = "chromadb_data"
     chromadb_collection_name: str = "face_embeddings"
     
     # 连接池配置
@@ -36,40 +42,161 @@ class DatabaseConfig:
     pool_timeout: int = 30
     pool_recycle: int = 3600
     
+    # 连接超时配置
+    connect_timeout: int = 30
+    read_timeout: int = 60
+    write_timeout: int = 60
+    
+    def __post_init__(self):
+        """初始化后验证和标准化路径"""
+        self._validate_config()
+        self._ensure_directories()
+    
+    def _validate_config(self):
+        """验证配置参数"""
+        if self.db_type not in ["sqlite", "mysql", "chromadb"]:
+            raise ValueError(f"不支持的数据库类型: {self.db_type}")
+        
+        if not (1 <= self.mysql_port <= 65535):
+            raise ValueError(f"MySQL端口号无效: {self.mysql_port}")
+        
+        if self.db_type == "mysql" and not self.mysql_password:
+            raise ValueError("MySQL密码不能为空")
+        
+        if not (1 <= self.pool_size <= 100):
+            raise ValueError(f"连接池大小无效: {self.pool_size}")
+    
+    def _ensure_directories(self):
+        """确保所有必要目录存在"""
+        directories = [
+            self.base_data_dir,
+            self.db_dir,
+            self.get_chromadb_path()
+        ]
+        
+        for directory in directories:
+            if directory:
+                Path(directory).mkdir(parents=True, exist_ok=True)
+    
+    def get_sqlite_path(self) -> str:
+        """获取标准化的SQLite数据库路径"""
+        if os.path.isabs(self.sqlite_filename):
+            return self.sqlite_filename
+        return os.path.join(self.db_dir, self.sqlite_filename)
+    
+    def get_chromadb_path(self) -> str:
+        """获取标准化的ChromaDB路径"""
+        if os.path.isabs(self.chromadb_dirname):
+            return self.chromadb_dirname
+        return os.path.join(self.base_data_dir, self.chromadb_dirname)
+    
     @classmethod
     def from_env(cls) -> 'DatabaseConfig':
-        """从环境变量创建配置"""
+        """从环境变量创建配置（保留环境变量覆盖能力）"""
         return cls(
-            db_type=os.getenv("DB_TYPE", "sqlite"),
-            mysql_host=os.getenv("MYSQL_HOST", "localhost"),
-            mysql_port=int(os.getenv("MYSQL_PORT", "3306")),
-            mysql_user=os.getenv("MYSQL_USER", "root"),
-            mysql_password=os.getenv("MYSQL_PASSWORD", ""),
-            mysql_database=os.getenv("MYSQL_DATABASE", "facecv"),
-            sqlite_path=os.getenv("SQLITE_PATH", "facecv.db"),
-            chromadb_path=os.getenv("CHROMADB_PATH", "./chromadb_data"),
-            chromadb_collection_name=os.getenv("CHROMADB_COLLECTION_NAME", "face_embeddings"),
-            pool_size=int(os.getenv("DB_POOL_SIZE", "10")),
-            max_overflow=int(os.getenv("DB_MAX_OVERFLOW", "20")),
-            pool_timeout=int(os.getenv("DB_POOL_TIMEOUT", "30")),
-            pool_recycle=int(os.getenv("DB_POOL_RECYCLE", "3600"))
+            db_type=os.getenv("FACECV_DB_TYPE", "sqlite"),
+            base_data_dir=os.getenv("FACECV_DATA_DIR", "./data"),
+            db_dir=os.getenv("FACECV_DB_DIR", "./data/db"),
+            # MySQL配置 - 硬编码默认值，但允许环境变量覆盖
+            mysql_host=os.getenv("FACECV_MYSQL_HOST", "eurekailab.mysql.rds.aliyuncs.com"),
+            mysql_port=int(os.getenv("FACECV_MYSQL_PORT", "3306")),
+            mysql_user=os.getenv("FACECV_MYSQL_USER", "root"),
+            mysql_password=os.getenv("FACECV_MYSQL_PASSWORD", "Zsg20010115_"),
+            mysql_database=os.getenv("FACECV_MYSQL_DATABASE", "facecv"),
+            mysql_charset=os.getenv("FACECV_MYSQL_CHARSET", "utf8mb4"),
+            # SQLite配置
+            sqlite_filename=os.getenv("FACECV_SQLITE_FILENAME", "facecv.db"),
+            # ChromaDB配置
+            chromadb_dirname=os.getenv("FACECV_CHROMADB_DIRNAME", "chromadb_data"),
+            chromadb_collection_name=os.getenv("FACECV_CHROMADB_COLLECTION_NAME", "face_embeddings"),
+            # 连接池配置
+            pool_size=int(os.getenv("FACECV_DB_POOL_SIZE", "10")),
+            max_overflow=int(os.getenv("FACECV_DB_MAX_OVERFLOW", "20")),
+            pool_timeout=int(os.getenv("FACECV_DB_POOL_TIMEOUT", "30")),
+            pool_recycle=int(os.getenv("FACECV_DB_POOL_RECYCLE", "3600")),
+            # 超时配置
+            connect_timeout=int(os.getenv("FACECV_DB_CONNECT_TIMEOUT", "30")),
+            read_timeout=int(os.getenv("FACECV_DB_READ_TIMEOUT", "60")),
+            write_timeout=int(os.getenv("FACECV_DB_WRITE_TIMEOUT", "60"))
         )
     
     @property
     def mysql_url(self) -> str:
         """获取MySQL连接URL"""
-        return f"mysql+pymysql://{self.mysql_user}:{self.mysql_password}@{self.mysql_host}:{self.mysql_port}/{self.mysql_database}"
+        return (f"mysql+pymysql://{self.mysql_user}:{self.mysql_password}@"
+                f"{self.mysql_host}:{self.mysql_port}/{self.mysql_database}"
+                f"?charset={self.mysql_charset}&autocommit=true")
     
     @property
     def async_mysql_url(self) -> str:
         """获取异步MySQL连接URL"""
-        return f"mysql+aiomysql://{self.mysql_user}:{self.mysql_password}@{self.mysql_host}:{self.mysql_port}/{self.mysql_database}"
+        return (f"mysql+aiomysql://{self.mysql_user}:{self.mysql_password}@"
+                f"{self.mysql_host}:{self.mysql_port}/{self.mysql_database}"
+                f"?charset={self.mysql_charset}&autocommit=true")
     
     @property
     def sqlite_url(self) -> str:
         """获取SQLite连接URL"""
-        return f"sqlite:///{self.sqlite_path}"
+        sqlite_path = self.get_sqlite_path()
+        return f"sqlite:///{sqlite_path}"
+    
+    def get_connection_url(self) -> str:
+        """根据数据库类型获取连接URL"""
+        if self.db_type == "mysql":
+            return self.mysql_url
+        elif self.db_type == "sqlite":
+            return self.sqlite_url
+        elif self.db_type == "chromadb":
+            return self.get_chromadb_path()
+        else:
+            raise ValueError(f"不支持的数据库类型: {self.db_type}")
+    
+    def get_connection_params(self) -> dict:
+        """获取连接参数"""
+        base_params = {
+            "pool_size": self.pool_size,
+            "max_overflow": self.max_overflow,
+            "pool_timeout": self.pool_timeout,
+            "pool_recycle": self.pool_recycle
+        }
+        
+        if self.db_type == "mysql":
+            base_params.update({
+                "connect_args": {
+                    "connect_timeout": self.connect_timeout,
+                    "read_timeout": self.read_timeout,
+                    "write_timeout": self.write_timeout,
+                    "charset": self.mysql_charset
+                }
+            })
+        
+        return base_params
 
 
 # 全局配置实例
 db_config = DatabaseConfig.from_env()
+
+# 配置常量
+SUPPORTED_DB_TYPES = ["sqlite", "mysql", "chromadb"]
+DEFAULT_DB_TYPE = "sqlite"
+DEFAULT_SQLITE_FILENAME = "facecv.db"
+DEFAULT_CHROMADB_DIRNAME = "chromadb_data"
+DEFAULT_COLLECTION_NAME = "face_embeddings"
+
+# 硬编码生产环境配置
+PRODUCTION_MYSQL_CONFIG = {
+    "host": "eurekailab.mysql.rds.aliyuncs.com",
+    "port": 3306,
+    "user": "root",
+    "password": "Zsg20010115_",
+    "database": "facecv",
+    "charset": "utf8mb4"
+}
+
+def get_standardized_db_config(db_type: Optional[str] = None) -> DatabaseConfig:
+    """获取标准化的数据库配置"""
+    if db_type:
+        config = DatabaseConfig.from_env()
+        config.db_type = db_type
+        return config
+    return db_config

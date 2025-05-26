@@ -25,11 +25,11 @@ FROM base as dependencies
 WORKDIR /app
 
 # Copy requirements files
-COPY requirements*.txt ./
+COPY requirements-docker.txt ./requirements.txt
 
-# Install Python dependencies
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
+# Install Python dependencies with timeout and retry
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
+    pip install --no-cache-dir --timeout 600 -r requirements.txt
 
 # Stage 3: Application
 FROM dependencies as app

@@ -34,13 +34,12 @@ def get_chromadb_facedb():
             from .chroma_facedb import ChromaFaceDB, CHROMADB_AVAILABLE
             if CHROMADB_AVAILABLE:
                 _chromadb_facedb = ChromaFaceDB
+                logging.info("ChromaDB is available and ready to use")
             else:
-                # Use mock implementation
-                from .chroma_facedb import MockChromaFaceDB
-                _chromadb_facedb = MockChromaFaceDB
-                logging.warning("ChromaDB not installed, using mock implementation")
+                logging.error("ChromaDB not installed. Install with: pip install chromadb")
+                _chromadb_facedb = False
         except ImportError as e:
-            logging.warning(f"ChromaDB数据库不可用: {e}")
+            logging.error(f"ChromaDB数据库不可用: {e}")
             _chromadb_facedb = False
     return _chromadb_facedb if _chromadb_facedb is not False else None
 
@@ -94,7 +93,7 @@ class FaceDBFactory:
         try:
             if db_type == 'sqlite':
                 # SQLite只需要路径参数
-                db_path = kwargs.get('db_path') or (config or db_config).sqlite_path
+                db_path = kwargs.get('db_path') or (config or db_config).get_sqlite_path()
                 return db_class(db_path=db_path)
             
             elif db_type == 'mysql':

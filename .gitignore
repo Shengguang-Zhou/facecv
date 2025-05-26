@@ -2,10 +2,18 @@
 __pycache__/
 *.py[cod]
 *$py.class
-
+CLAUDE.md
+.claude
+data
+chroma
+docs
+*.h2.db
+*.db
 # C extensions
 *.so
-
+weights/
+# Keep models directory but ignore __pycache__
+facecv/models/**/__pycache__/
 # Distribution / packaging
 .Python
 build/
