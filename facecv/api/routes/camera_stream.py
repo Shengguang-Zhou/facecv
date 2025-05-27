@@ -29,7 +29,12 @@ class CameraManager:
         self.camera_frames: Dict[str, np.ndarray] = {}
         self.camera_results: Dict[str, Dict[str, Any]] = {}
         self.recognizer = None
-        self._init_recognizer()
+        # Delay recognizer initialization until first use
+    
+    def _ensure_recognizer(self):
+        """Ensure recognizer is initialized (lazy initialization)"""
+        if self.recognizer is None:
+            self._init_recognizer()
     
     def _init_recognizer(self):
         """Initialize Real InsightFace recognizer"""
@@ -154,6 +159,9 @@ class CameraManager:
                 
                 # Store frame
                 self.camera_frames[camera_id] = frame.copy()
+                
+                # Ensure recognizer is initialized
+                self._ensure_recognizer()
                 
                 # Process with face recognition
                 if self.recognizer:

@@ -3,7 +3,7 @@
 # API测试脚本 - 验证所有关键API是否正常工作
 # 使用阿里云MySQL数据库
 
-BASE_URL="http://localhost:7003"
+BASE_URL="http://localhost:7004"
 echo "🚀 开始测试 FaceCV API (使用阿里云MySQL)"
 echo "基础URL: $BASE_URL"
 echo "数据库: MySQL (eurekailab.mysql.rds.aliyuncs.com)"
