@@ -15,17 +15,46 @@ def check_cuda_availability() -> bool:
 
 
 def get_execution_providers() -> List[str]:
-    """Get the list of execution providers based on CUDA availability"""
+    """Get the list of execution providers based on CUDA availability and installed libraries"""
     providers = []
     
     if check_cuda_availability():
         cuda_version = get_cuda_version()
         if cuda_version and cuda_version[0] >= 11:
             providers.append('CUDAExecutionProvider')
-        providers.append('TensorrtExecutionProvider')
+        
+        # Only add TensorRT if it's actually available
+        if _is_tensorrt_available():
+            providers.append('TensorrtExecutionProvider')
     
     providers.append('CPUExecutionProvider')
     return providers
+
+def _is_tensorrt_available() -> bool:
+    """Check if TensorRT libraries are available"""
+    try:
+        # Try to import TensorRT
+        import tensorrt
+        return True
+    except ImportError:
+        pass
+    
+    # Check for TensorRT shared libraries
+    import ctypes
+    tensorrt_libs = [
+        'libnvinfer.so.10',
+        'libnvinfer.so.8',
+        'libnvinfer.so'
+    ]
+    
+    for lib in tensorrt_libs:
+        try:
+            ctypes.CDLL(lib)
+            return True
+        except OSError:
+            continue
+    
+    return False
 
 
 def setup_cuda_environment():
@@ -135,7 +164,10 @@ def get_cudnn_version() -> Optional[int]:
 
 def install_appropriate_onnxruntime():
     """
-    Install the appropriate ONNX Runtime based on CUDA version
+    Get the appropriate ONNX Runtime installation command based on CUDA version
+    
+    Returns:
+        str: Installation command for the appropriate ONNX Runtime version
     """
     cuda_version = get_cuda_version()
     
@@ -145,17 +177,19 @@ def install_appropriate_onnxruntime():
     
     major, minor = cuda_version
     
-    if major == 12:
-        # CUDA 12.x - use CUDA 12 compatible ONNX Runtime
-        logger.info(f"CUDA {major}.{minor} detected, installing ONNX Runtime for CUDA 12")
-        return "pip install onnxruntime-gpu --index-url https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/onnxruntime-cuda-12/pypi/simple/"
+    if major >= 12:
+        # CUDA 12.x+ (12.4, 12.5, 12.6+) - use latest ONNX Runtime GPU
+        # ONNX Runtime 1.19+ with CUDA 12.x support all minor versions due to compatibility
+        logger.info(f"CUDA {major}.{minor} detected, installing latest ONNX Runtime GPU")
+        return "pip install onnxruntime-gpu --upgrade"
     elif major == 11:
-        # CUDA 11.x - use CUDA 11 compatible ONNX Runtime
+        # CUDA 11.x - use legacy CUDA 11 compatible ONNX Runtime
         logger.info(f"CUDA {major}.{minor} detected, installing ONNX Runtime for CUDA 11")
         return "pip install onnxruntime-gpu --index-url https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/onnxruntime-cuda-11/pypi/simple/"
     else:
-        # Other CUDA versions
-        logger.warning(f"CUDA {major}.{minor} is not directly supported, trying default ONNX Runtime GPU")
+        # Older CUDA versions
+        logger.warning(f"CUDA {major}.{minor} is not supported by current ONNX Runtime versions")
+        logger.warning("Consider upgrading to CUDA 12.x for best compatibility")
         return "pip install onnxruntime-gpu"
 
 
