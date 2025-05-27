@@ -160,14 +160,16 @@ class DatabaseConfig:
     @property
     def mysql_url(self) -> str:
         """获取MySQL连接URL"""
-        return (f"mysql+pymysql://{self.mysql_user}:{self.mysql_password}@"
+        from urllib.parse import quote_plus
+        return (f"mysql+pymysql://{quote_plus(self.mysql_user)}:{quote_plus(self.mysql_password)}@"
                 f"{self.mysql_host}:{self.mysql_port}/{self.mysql_database}"
                 f"?charset={self.mysql_charset}&autocommit=true")
     
     @property
     def async_mysql_url(self) -> str:
         """获取异步MySQL连接URL"""
-        return (f"mysql+aiomysql://{self.mysql_user}:{self.mysql_password}@"
+        from urllib.parse import quote_plus
+        return (f"mysql+aiomysql://{quote_plus(self.mysql_user)}:{quote_plus(self.mysql_password)}@"
                 f"{self.mysql_host}:{self.mysql_port}/{self.mysql_database}"
                 f"?charset={self.mysql_charset}&autocommit=true")
     
