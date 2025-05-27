@@ -1,0 +1,84 @@
+name: Deploy to Client Server
+
+on:
+  push:
+    branches: [ master, main ]
+  workflow_dispatch:  # Allow manual trigger
+
+env:
+  DEPLOY_HOST: 113.44.157.91
+  DEPLOY_USER: tdit
+  DEPLOY_PATH: /home/tdit/facecv
+  DEPLOY_PORT: 22
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+    
+    - name: Setup SSH Key
+      env:
+        DEPLOY_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+      run: |
+        mkdir -p ~/.ssh
+        echo "$DEPLOY_KEY" > ~/.ssh/deploy_key
+        chmod 600 ~/.ssh/deploy_key
+        ssh-keyscan -p $DEPLOY_PORT -H $DEPLOY_HOST >> ~/.ssh/known_hosts
+    
+    - name: Deploy to Server
+      run: |
+        # Create .deployignore if not exists (using the one from repo)
+        
+        # Deploy using rsync
+        rsync -avz --delete \
+          --exclude-from='.deployignore' \
+          --progress \
+          -e "ssh -i ~/.ssh/deploy_key -p $DEPLOY_PORT" \
+          ./ \
+          $DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/
+    
+    - name: Restart Service
+      run: |
+        ssh -i ~/.ssh/deploy_key -p $DEPLOY_PORT $DEPLOY_USER@$DEPLOY_HOST << 'EOF'
+          cd ${{ env.DEPLOY_PATH }}
+          
+          # Kill existing process if running
+          if [ -f facecv.pid ]; then
+            PID=$(cat facecv.pid)
+            if ps -p $PID > /dev/null 2>&1; then
+              echo "Stopping existing FaceCV process (PID: $PID)..."
+              kill $PID
+              sleep 2
+            fi
+          fi
+          
+          # Start the service
+          echo "Starting FaceCV service..."
+          nohup python main.py > facecv.log 2>&1 &
+          echo $! > facecv.pid
+          
+          # Check if service started
+          sleep 3
+          if ps -p $(cat facecv.pid) > /dev/null 2>&1; then
+            echo "✅ FaceCV service started successfully!"
+          else
+            echo "❌ Failed to start FaceCV service!"
+            tail -n 20 facecv.log
+            exit 1
+          fi
+        EOF
+    
+    - name: Verify Deployment
+      run: |
+        ssh -i ~/.ssh/deploy_key -p $DEPLOY_PORT $DEPLOY_USER@$DEPLOY_HOST << 'EOF'
+          cd ${{ env.DEPLOY_PATH }}
+          echo "Deployment verification:"
+          echo "- Current directory: $(pwd)"
+          echo "- Python version: $(python --version)"
+          echo "- Service status: $(ps -p $(cat facecv.pid 2>/dev/null) > /dev/null 2>&1 && echo 'Running' || echo 'Not running')"
+          echo "- Recent log entries:"
+          tail -n 5 facecv.log 2>/dev/null || echo "No logs available"
+        EOF
