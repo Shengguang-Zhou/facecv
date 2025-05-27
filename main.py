@@ -1,5 +1,9 @@
 """FaceCV API 主程序"""
 
+import os
+# Fix protobuf compatibility issue with TensorFlow/DeepFace
+os.environ['PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION'] = 'python'
+
 import uvicorn
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
@@ -38,7 +42,7 @@ async def lifespan(app: FastAPI):
         
     except Exception as e:
         logger.error(f"数据库初始化失败: {e}")
-        # 继续运行，使用mock模式
+
     
     # 启动 webhook manager
     webhook_manager.start()

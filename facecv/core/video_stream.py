@@ -160,13 +160,30 @@ class VideoStreamProcessor:
             self.is_running = False
             self.stop_event.set()
             
-            if 'cap' in locals():
-                cap.release()
-            cv2.destroyAllWindows()
+            # 确保视频捕获对象被释放
+            if 'cap' in locals() and cap is not None:
+                try:
+                    cap.release()
+                    logger.info("视频捕获对象已释放")
+                except Exception as e:
+                    logger.error(f"释放视频捕获对象时出错: {e}")
+            
+            # 确保所有OpenCV窗口被关闭
+            try:
+                cv2.destroyAllWindows()
+                cv2.waitKey(1)  # 确保窗口事件被处理
+                logger.info("所有OpenCV窗口已关闭")
+            except Exception as e:
+                logger.error(f"关闭OpenCV窗口时出错: {e}")
             
             # 等待推理线程结束
-            if 'inference_thread' in locals():
-                inference_thread.join(timeout=2.0)
+            if 'inference_thread' in locals() and inference_thread is not None:
+                try:
+                    inference_thread.join(timeout=2.0)
+                    if inference_thread.is_alive():
+                        logger.warning("推理线程未能在2秒内结束")
+                except Exception as e:
+                    logger.error(f"等待推理线程结束时出错: {e}")
                 
             logger.info("视频流处理结束")
             return all_results

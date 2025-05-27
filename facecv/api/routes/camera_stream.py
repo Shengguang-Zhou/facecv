@@ -138,12 +138,30 @@ class CameraManager:
             if camera_id in self.camera_results:
                 del self.camera_results[camera_id]
             
+            # If no more cameras are active, clean up recognizer
+            if not self.camera_active:
+                self._cleanup_recognizer()
+            
             logger.info(f"Camera {camera_id} disconnected successfully")
             return True
             
         except Exception as e:
             logger.error(f"Error disconnecting camera {camera_id}: {e}")
             return False
+    
+    def _cleanup_recognizer(self):
+        """Clean up recognizer resources when no cameras are active"""
+        if self.recognizer is not None:
+            try:
+                # Clear recognizer reference
+                self.recognizer = None
+                logger.info("Recognizer resources cleaned up")
+                
+                # Force garbage collection to free memory
+                import gc
+                gc.collect()
+            except Exception as e:
+                logger.error(f"Error cleaning up recognizer: {e}")
     
     def _process_camera(self, camera_id: str):
         """Process camera frames in separate thread"""
@@ -289,6 +307,13 @@ class CameraManager:
     def get_latest_results(self, camera_id: str):
         """Get latest recognition results for camera"""
         return self.camera_results.get(camera_id, {"error": "Camera not found"})
+    
+    def disconnect_all_cameras(self):
+        """Disconnect all active cameras and cleanup resources"""
+        camera_ids = list(self.cameras.keys())
+        for camera_id in camera_ids:
+            self.disconnect_camera(camera_id)
+        logger.info("All cameras disconnected")
 
 # Global camera manager instance
 camera_manager = CameraManager()
