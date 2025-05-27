@@ -194,6 +194,150 @@ runtime_config = get_runtime_config()
 runtime_config.set("insightface_model_pack", "buffalo_m")
 ```
 
+## 配置系统详细说明（中文）
+
+### 数据库选择机制
+
+FaceCV 支持三种数据库，每种适用于不同场景：
+
+1. **SQLite（默认）**
+   - 适用场景：开发测试、单机部署、小规模应用
+   - 优点：零配置、无需安装、轻量级
+   - 缺点：并发性能有限、不支持网络访问
+   - 配置方式：
+   ```bash
+   FACECV_DB_TYPE=sqlite
+   # 数据库文件会自动创建在 ./data/db/facecv.db
+   ```
+
+2. **MySQL（推荐生产环境）**
+   - 适用场景：生产部署、多实例、高并发、需要远程访问
+   - 优点：成熟稳定、性能优秀、支持主从复制
+   - 缺点：需要额外安装配置
+   - 配置方式：
+   ```bash
+   FACECV_DB_TYPE=mysql
+   FACECV_MYSQL_HOST=你的MySQL服务器地址
+   FACECV_MYSQL_PORT=3306
+   FACECV_MYSQL_USER=用户名
+   FACECV_MYSQL_PASSWORD=密码
+   FACECV_MYSQL_DATABASE=facecv
+   ```
+
+3. **ChromaDB（实验性）**
+   - 适用场景：向量检索优化、大规模人脸库、相似度搜索
+   - 优点：向量检索速度快、内置相似度计算
+   - 缺点：功能有限、社区支持较少
+   - 配置方式：
+   ```bash
+   FACECV_DB_TYPE=chromadb
+   FACECV_CHROMADB_DIRNAME=./data/chromadb
+   ```
+
+### 模型选择指南
+
+#### InsightFace 模型包对比
+
+| 模型包 | 精度 | 速度 | 内存占用 | 适用场景 |
+|--------|------|------|----------|----------|
+| buffalo_l | ★★★★★ | ★★★☆☆ | ~1.5GB | 生产环境、高精度要求 |
+| buffalo_m | ★★★★☆ | ★★★★☆ | ~800MB | 平衡性能、边缘计算 |
+| buffalo_s | ★★★☆☆ | ★★★★★ | ~300MB | 移动设备、资源受限 |
+| antelopev2 | ★★★★★ | ★★☆☆☆ | ~2GB+ | 研究用途、极高精度 |
+
+#### 选择建议
+
+- **生产环境**：使用 `buffalo_l`，确保识别准确率
+- **开发测试**：使用 `buffalo_m`，快速迭代
+- **资源受限**：使用 `buffalo_s`，如树莓派、移动设备
+- **研究场景**：使用 `antelopev2`，追求最高精度
+
+### 配置系统工作原理
+
+FaceCV 采用三层配置架构：
+
+1. **Settings（静态配置）**
+   - 来源：环境变量、.env 文件
+   - 特点：启动时加载，不可修改
+   - 用途：数据库连接、服务端口、密钥等
+
+2. **RuntimeConfig（运行时配置）**
+   - 来源：初始值从 Settings 复制
+   - 特点：可在运行时动态修改
+   - 用途：模型切换、阈值调整、特性开关
+
+3. **DatabaseConfig（数据库配置）**
+   - 来源：专门的数据库配置
+   - 特点：统一的数据库接口
+   - 用途：数据库连接管理、连接池配置
+
+#### 配置加载流程
+
+```
+启动应用
+  ↓
+读取环境变量 (.env 文件)
+  ↓
+创建 Settings 实例（不可变）
+  ↓
+创建 DatabaseConfig（数据库配置）
+  ↓
+创建 RuntimeConfig（可变配置）
+  ↓
+应用运行中可通过 API 修改 RuntimeConfig
+```
+
+### 实际应用示例
+
+#### 场景1：从开发切换到生产
+
+开发环境（.env.development）：
+```bash
+FACECV_ENVIRONMENT=development
+FACECV_DB_TYPE=sqlite
+FACECV_INSIGHTFACE_MODEL_PACK=buffalo_m
+FACECV_LOG_LEVEL=DEBUG
+```
+
+生产环境（.env.production）：
+```bash
+FACECV_ENVIRONMENT=production
+FACECV_DB_TYPE=mysql
+FACECV_MYSQL_HOST=生产数据库地址
+FACECV_MYSQL_PASSWORD=强密码
+FACECV_INSIGHTFACE_MODEL_PACK=buffalo_l
+FACECV_LOG_LEVEL=INFO
+```
+
+#### 场景2：动态调整模型
+
+```python
+# 通过 API 动态切换模型（无需重启服务）
+POST /api/v1/insightface/models/select
+{
+  "model_pack": "buffalo_s"  # 临时切换到小模型
+}
+```
+
+#### 场景3：多环境部署
+
+```bash
+# 边缘设备
+FACECV_DB_TYPE=sqlite
+FACECV_INSIGHTFACE_MODEL_PACK=buffalo_s
+FACECV_MODEL_OFFLOAD_TIMEOUT=60  # 1分钟后卸载模型
+
+# 云服务器
+FACECV_DB_TYPE=mysql
+FACECV_INSIGHTFACE_MODEL_PACK=buffalo_l
+FACECV_MODEL_OFFLOAD_TIMEOUT=0  # 永不卸载
+
+# 开发机器
+FACECV_DB_TYPE=sqlite
+FACECV_INSIGHTFACE_MODEL_PACK=buffalo_m
+FACECV_DEBUG=true
+```
+
 ## 架构
 
 ```
