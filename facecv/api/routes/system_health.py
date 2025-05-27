@@ -205,64 +205,64 @@ def get_gpu_info():
             "detection_method": "pynvml"
         }
             
-        except ImportError:
-            # Fallback to GPUtil
-            if HAS_GPUTIL:
-                gpus = GPUtil.getGPUs()
-                if not gpus:
-                    return {"available": False, "message": "No GPUs detected"}
-                
-                devices = []
-                for gpu in gpus:
-                    devices.append({
-                        "id": gpu.id,
-                        "name": gpu.name,
-                        "memory_total": gpu.memoryTotal,
-                        "memory_used": gpu.memoryUsed,
-                        "utilization": gpu.load * 100,
-                        "temperature": gpu.temperature
-                    })
-                
-                return {
-                    "available": True,
-                    "gpu_count": len(gpus),
-                    "devices": devices,
-                    "total_memory_gb": sum(gpu.memoryTotal for gpu in gpus) / 1024,
-                    "used_memory_gb": sum(gpu.memoryUsed for gpu in gpus) / 1024,
-                    "utilization": sum(gpu.load for gpu in gpus) / len(gpus) * 100,
-                    "temperature": sum(gpu.temperature for gpu in gpus) / len(gpus)
-                }
-            else:
-                # Final fallback: check PyTorch CUDA
-                try:
-                    import torch
-                    if torch.cuda.is_available():
-                        device_count = torch.cuda.device_count()
-                        devices = []
-                        for i in range(device_count):
-                            devices.append({
-                                "id": i,
-                                "name": torch.cuda.get_device_name(i),
-                                "memory_total": torch.cuda.get_device_properties(i).total_memory // (1024**2),
-                                "memory_used": torch.cuda.memory_allocated(i) // (1024**2),
-                                "utilization": 0,  # PyTorch doesn't provide utilization
-                                "temperature": 0   # PyTorch doesn't provide temperature
-                            })
-                        return {
-                            "available": True,
-                            "gpu_count": device_count,
-                            "devices": devices,
-                            "total_memory_gb": sum(d["memory_total"] for d in devices) / 1024,
-                            "used_memory_gb": sum(d["memory_used"] for d in devices) / 1024,
-                            "utilization": 0,
-                            "temperature": 0,
-                            "detection_method": "pytorch",
-                            "note": "Limited info available via PyTorch"
-                        }
-                except ImportError:
-                    pass
-                
-                return {"available": False, "message": "GPU monitoring libraries not available"}
+    except ImportError:
+        # Fallback to GPUtil
+        if HAS_GPUTIL:
+            gpus = GPUtil.getGPUs()
+            if not gpus:
+                return {"available": False, "message": "No GPUs detected"}
+            
+            devices = []
+            for gpu in gpus:
+                devices.append({
+                    "id": gpu.id,
+                    "name": gpu.name,
+                    "memory_total": gpu.memoryTotal,
+                    "memory_used": gpu.memoryUsed,
+                    "utilization": gpu.load * 100,
+                    "temperature": gpu.temperature
+                })
+            
+            return {
+                "available": True,
+                "gpu_count": len(gpus),
+                "devices": devices,
+                "total_memory_gb": sum(gpu.memoryTotal for gpu in gpus) / 1024,
+                "used_memory_gb": sum(gpu.memoryUsed for gpu in gpus) / 1024,
+                "utilization": sum(gpu.load for gpu in gpus) / len(gpus) * 100,
+                "temperature": sum(gpu.temperature for gpu in gpus) / len(gpus)
+            }
+        else:
+            # Final fallback: check PyTorch CUDA
+            try:
+                import torch
+                if torch.cuda.is_available():
+                    device_count = torch.cuda.device_count()
+                    devices = []
+                    for i in range(device_count):
+                        devices.append({
+                            "id": i,
+                            "name": torch.cuda.get_device_name(i),
+                            "memory_total": torch.cuda.get_device_properties(i).total_memory // (1024**2),
+                            "memory_used": torch.cuda.memory_allocated(i) // (1024**2),
+                            "utilization": 0,  # PyTorch doesn't provide utilization
+                            "temperature": 0   # PyTorch doesn't provide temperature
+                        })
+                    return {
+                        "available": True,
+                        "gpu_count": device_count,
+                        "devices": devices,
+                        "total_memory_gb": sum(d["memory_total"] for d in devices) / 1024,
+                        "used_memory_gb": sum(d["memory_used"] for d in devices) / 1024,
+                        "utilization": 0,
+                        "temperature": 0,
+                        "detection_method": "pytorch",
+                        "note": "Limited info available via PyTorch"
+                    }
+            except ImportError:
+                pass
+            
+            return {"available": False, "message": "GPU monitoring libraries not available"}
                 
     except Exception as e:
         logger.error(f"Error getting GPU info: {e}")
