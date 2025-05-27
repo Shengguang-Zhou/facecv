@@ -171,21 +171,19 @@ async def list_faces():
     - total `int`: 人脸总数量
     """
     try:
-        _, embedding_mgr, _, _ = get_deepface_components()
+        recognizer, _, _, _ = get_deepface_components()
         
         # 获取所有用户
-        all_users = await embedding_mgr.get_all_users()
+        face_list = recognizer.list_faces()
         
         faces = []
-        if all_users and "ids" in all_users:
-            for i, face_id in enumerate(all_users["ids"]):
-                metadata = all_users["metadatas"][i] if i < len(all_users["metadatas"]) else {}
-                faces.append({
-                    "face_id": face_id,
-                    "person_name": metadata.get("name", "Unknown"),
-                    "created_at": metadata.get("created_at"),
-                    "metadata": metadata
-                })
+        for face_data in face_list:
+            faces.append({
+                "face_id": face_data.face_id,
+                "person_name": face_data.person_name,
+                "created_at": face_data.metadata.get("created_at") if face_data.metadata else None,
+                "metadata": face_data.metadata or {}
+            })
         
         return FaceListResponse(
             faces=faces,

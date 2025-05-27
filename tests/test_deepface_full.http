@@ -1,0 +1,230 @@
+### DeepFace Comprehensive API Tests
+### Testing with MySQL database verification
+
+### 1. Health Check - Verify DeepFace Service Status
+GET http://127.0.0.1:7003/api/v1/deepface/health
+Accept: application/json
+
+###
+
+### 2. List All Faces (Before Registration)
+# Should return empty list initially
+GET http://127.0.0.1:7003/api/v1/deepface/faces/
+Accept: application/json
+
+###
+
+### 3. Register Face - Test with Valid Image
+# Register Harris test image
+POST http://127.0.0.1:7003/api/v1/deepface/faces/
+Content-Type: multipart/form-data; boundary=boundary
+
+--boundary
+Content-Disposition: form-data; name="name"
+
+Harris Test
+--boundary
+Content-Disposition: form-data; name="file"; filename="harris1.jpeg"
+Content-Type: image/jpeg
+
+< /home/a/PycharmProjects/EurekCV/dataset/faces/harris1.jpeg
+--boundary
+Content-Disposition: form-data; name="metadata"
+
+{"department": "Testing", "employee_id": "EMP001"}
+--boundary--
+
+###
+
+### 4. List All Faces (After Registration)
+# Should show the registered face
+GET http://127.0.0.1:7003/api/v1/deepface/faces/
+Accept: application/json
+
+###
+
+### 5. Get Face by ID
+# Replace {face_id} with actual ID from registration response
+GET http://127.0.0.1:7003/api/v1/deepface/faces/{face_id}
+Accept: application/json
+
+###
+
+### 6. Search Face by Name
+GET http://127.0.0.1:7003/api/v1/deepface/faces/search?name=Harris
+Accept: application/json
+
+###
+
+### 7. Face Recognition - Test with Same Person
+POST http://127.0.0.1:7003/api/v1/deepface/recognition
+Content-Type: multipart/form-data; boundary=boundary
+
+--boundary
+Content-Disposition: form-data; name="file"; filename="harris2.jpeg"
+Content-Type: image/jpeg
+
+< /home/a/PycharmProjects/EurekCV/dataset/faces/harris2.jpeg
+--boundary
+Content-Disposition: form-data; name="threshold"
+
+0.6
+--boundary--
+
+###
+
+### 8. Face Recognition - Test with Different Person
+POST http://127.0.0.1:7003/api/v1/deepface/recognition
+Content-Type: multipart/form-data; boundary=boundary
+
+--boundary
+Content-Disposition: form-data; name="file"; filename="trump1.jpeg"
+Content-Type: image/jpeg
+
+< /home/a/PycharmProjects/EurekCV/dataset/faces/trump1.jpeg
+--boundary
+Content-Disposition: form-data; name="threshold"
+
+0.6
+--boundary--
+
+###
+
+### 9. Face Verification - Same Person
+POST http://127.0.0.1:7003/api/v1/deepface/verify/
+Content-Type: multipart/form-data; boundary=boundary
+
+--boundary
+Content-Disposition: form-data; name="file1"; filename="harris1.jpeg"
+Content-Type: image/jpeg
+
+< /home/a/PycharmProjects/EurekCV/dataset/faces/harris1.jpeg
+--boundary
+Content-Disposition: form-data; name="file2"; filename="harris2.jpeg"
+Content-Type: image/jpeg
+
+< /home/a/PycharmProjects/EurekCV/dataset/faces/harris2.jpeg
+--boundary--
+
+###
+
+### 10. Face Verification - Different People
+POST http://127.0.0.1:7003/api/v1/deepface/verify/
+Content-Type: multipart/form-data; boundary=boundary
+
+--boundary
+Content-Disposition: form-data; name="file1"; filename="harris1.jpeg"
+Content-Type: image/jpeg
+
+< /home/a/PycharmProjects/EurekCV/dataset/faces/harris1.jpeg
+--boundary
+Content-Disposition: form-data; name="file2"; filename="trump1.jpeg"
+Content-Type: image/jpeg
+
+< /home/a/PycharmProjects/EurekCV/dataset/faces/trump1.jpeg
+--boundary--
+
+###
+
+### 11. Face Analysis
+POST http://127.0.0.1:7003/api/v1/deepface/analyze
+Content-Type: multipart/form-data; boundary=boundary
+
+--boundary
+Content-Disposition: form-data; name="file"; filename="harris1.jpeg"
+Content-Type: image/jpeg
+
+< /home/a/PycharmProjects/EurekCV/dataset/faces/harris1.jpeg
+--boundary
+Content-Disposition: form-data; name="actions"
+
+["age", "gender", "emotion", "race"]
+--boundary--
+
+###
+
+### 12. Update Face
+PUT http://127.0.0.1:7003/api/v1/deepface/faces/{face_id}
+Content-Type: application/json
+Accept: application/json
+
+{
+  "new_name": "Harris Updated",
+  "metadata": {
+    "department": "Testing Updated",
+    "employee_id": "EMP001",
+    "updated_at": "2025-05-27"
+  }
+}
+
+###
+
+### 13. Delete Face by ID
+DELETE http://127.0.0.1:7003/api/v1/deepface/faces/{face_id}
+Accept: application/json
+
+###
+
+### 14. Delete Face by Name
+DELETE http://127.0.0.1:7003/api/v1/deepface/faces/by-name/Harris%20Updated
+Accept: application/json
+
+###
+
+### 15. Batch Register Faces
+POST http://127.0.0.1:7003/api/v1/deepface/faces/batch
+Content-Type: multipart/form-data; boundary=boundary
+
+--boundary
+Content-Disposition: form-data; name="files"; filename="harris1.jpeg"
+Content-Type: image/jpeg
+
+< /home/a/PycharmProjects/EurekCV/dataset/faces/harris1.jpeg
+--boundary
+Content-Disposition: form-data; name="files"; filename="trump1.jpeg"
+Content-Type: image/jpeg
+
+< /home/a/PycharmProjects/EurekCV/dataset/faces/trump1.jpeg
+--boundary
+Content-Disposition: form-data; name="names"
+
+["Harris Batch", "Trump Batch"]
+--boundary--
+
+###
+
+### 16. Video Face Detection
+POST http://127.0.0.1:7003/api/v1/deepface/video_face/
+Content-Type: application/json
+Accept: application/json
+
+{
+  "video_source": "0",
+  "duration": 5,
+  "name": "Video Test Person",
+  "metadata": {
+    "source": "webcam",
+    "session": "test"
+  }
+}
+
+###
+
+### MySQL Verification Queries (run these in MySQL client):
+# 
+# -- Check faces table
+# SELECT COUNT(*) FROM faces;
+# SELECT id, name, created_at, updated_at FROM faces ORDER BY created_at DESC LIMIT 10;
+# 
+# -- Check embeddings
+# SELECT f.name, LENGTH(f.embedding) as embedding_size, f.metadata 
+# FROM faces f 
+# ORDER BY f.created_at DESC LIMIT 5;
+#
+# -- Check for specific person
+# SELECT * FROM faces WHERE name LIKE '%Harris%';
+#
+# -- Verify deletion
+# SELECT * FROM faces WHERE id = 'deleted_face_id';
+
+###
