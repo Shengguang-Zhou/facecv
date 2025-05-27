@@ -13,8 +13,10 @@ from loguru import logger
 from facecv.api.routes import health, stream, webhook, camera_stream, deepface_api
 from facecv.api.routes import insightface_api as insightface
 from facecv.config import get_settings
+from facecv.config.runtime_config import get_runtime_config
 from facecv.database import get_default_database, test_database_availability
 from facecv.core.webhook import webhook_manager
+from facecv.utils.cuda_utils import setup_cuda_environment
 
 # 获取配置
 settings = get_settings()
@@ -25,6 +27,22 @@ async def lifespan(app: FastAPI):
     # 启动事件
     logger.info("FaceCV API 服务启动")
     logger.info(f"文档地址: http://localhost:7003/docs")
+    
+    # Initialize CUDA environment
+    logger.info("初始化 CUDA 环境...")
+    try:
+        setup_cuda_environment()
+        runtime_config = get_runtime_config()
+        cuda_available = runtime_config.get('cuda_available', False)
+        if cuda_available:
+            cuda_version = runtime_config.get('cuda_version')
+            providers = runtime_config.get('execution_providers', ['CPUExecutionProvider'])
+            logger.info(f"CUDA {cuda_version[0]}.{cuda_version[1]} 已配置")
+            logger.info(f"执行提供者: {providers}")
+        else:
+            logger.info("未检测到 CUDA，使用 CPU 模式")
+    except Exception as e:
+        logger.warning(f"CUDA 初始化警告: {e}")
     
     # 测试数据库连接
     logger.info("测试数据库连接...")

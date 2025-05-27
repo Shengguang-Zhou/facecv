@@ -332,6 +332,81 @@ class MySQLFaceDB(AbstractFaceDB):
         
         return self._execute_sync(_count_sync)
     
+    def search_similar_faces(self, embedding: List[float], threshold: float = 0.6, limit: int = 10) -> List[Dict[str, Any]]:
+        """搜索相似的人脸（兼容接口）"""
+        # 转换为numpy数组
+        embedding_np = np.array(embedding, dtype=np.float32)
+        
+        # 使用现有的query_faces_by_embedding方法
+        results = self.query_faces_by_embedding(embedding_np, top_k=limit)
+        
+        # 过滤低于阈值的结果并格式化输出
+        filtered_results = []
+        for face in results:
+            if face['similarity_score'] >= threshold:
+                filtered_results.append({
+                    'face_id': face['id'],
+                    'person_name': face['name'],
+                    'similarity': face['similarity_score'],
+                    'distance': 1.0 - face['similarity_score'],
+                    'metadata': face.get('metadata', {})
+                })
+        
+        return filtered_results
+    
+    def search_faces(self, embedding: List[float], threshold: float = 0.6, limit: int = 10) -> List[Dict[str, Any]]:
+        """搜索相似的人脸（别名方法）"""
+        return self.search_similar_faces(embedding, threshold, limit)
+    
+    def register_face(self, name: str, embedding: List[float], metadata: Optional[Dict] = None) -> str:
+        """注册人脸（兼容接口）"""
+        embedding_np = np.array(embedding, dtype=np.float32)
+        return self.add_face(name, embedding_np, metadata)
+    
+    def get_faces_by_name(self, name: str) -> List[Dict[str, Any]]:
+        """根据姓名获取人脸（兼容接口）"""
+        faces = self.query_faces_by_name(name)
+        # 格式化输出
+        formatted_faces = []
+        for face in faces:
+            formatted_faces.append({
+                'face_id': face['id'],
+                'person_name': face['name'],
+                'metadata': face.get('metadata', {}),
+                'created_at': face['created_at'].isoformat() if face['created_at'] else None,
+                'updated_at': face['updated_at'].isoformat() if face['updated_at'] else None
+            })
+        return formatted_faces
+    
+    def list_faces(self, limit: int = 100, offset: int = 0) -> List[Dict[str, Any]]:
+        """列出人脸（带分页）"""
+        def _list_sync():
+            sql = """
+            SELECT id, name, embedding, metadata, created_at, updated_at
+            FROM faces 
+            ORDER BY created_at DESC
+            LIMIT :limit OFFSET :offset
+            """
+            
+            results = []
+            with self._engine.connect() as conn:
+                result = conn.execute(text(sql), {'limit': limit, 'offset': offset})
+                
+                for row in result:
+                    face_dict = {
+                        'face_id': row[0],
+                        'person_name': row[1],
+                        'embedding': np.frombuffer(row[2], dtype=np.float32).tolist(),
+                        'metadata': json.loads(row[3]) if row[3] else None,
+                        'created_at': row[4].isoformat() if row[4] else None,
+                        'updated_at': row[5].isoformat() if row[5] else None
+                    }
+                    results.append(face_dict)
+                    
+            return results
+        
+        return self._execute_sync(_list_sync)
+    
     def clear_database(self) -> bool:
         """清空数据库"""
         def _clear_sync():

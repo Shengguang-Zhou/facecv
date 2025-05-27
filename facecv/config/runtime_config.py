@@ -4,11 +4,13 @@
 与基于Pydantic的Settings类不同，RuntimeConfig允许在运行时修改值。
 """
 
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 import threading
 import logging
+import os
 
 from facecv.config.settings import get_settings
+from facecv.utils.cuda_utils import get_cuda_version, get_cudnn_version, get_execution_providers
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +37,17 @@ class RuntimeConfig:
     
     def _initialize_defaults(self):
         """初始化默认运行时配置"""
+        # Detect CUDA and set execution providers
+        cuda_version = get_cuda_version()
+        execution_providers = get_execution_providers()
+        
+        # Log CUDA detection results
+        if cuda_version:
+            logger.info(f"Detected CUDA version: {cuda_version[0]}.{cuda_version[1]}")
+            logger.info(f"Using execution providers: {execution_providers}")
+        else:
+            logger.info("No CUDA detected, using CPU execution")
+        
         self._config = {
             "insightface_model_pack": "buffalo_l",
             "insightface_det_size": [640, 640],
@@ -48,7 +61,13 @@ class RuntimeConfig:
             "max_faces_per_image": 10,
             "enable_emotion": True,
             "enable_mask": True,
-            "prefer_gpu": True
+            "prefer_gpu": True,
+            
+            # CUDA and execution provider settings
+            "cuda_available": cuda_version is not None,
+            "cuda_version": cuda_version,
+            "execution_providers": execution_providers,
+            "onnx_providers": execution_providers  # For ONNX Runtime
         }
     
     def get(self, key: str, default: Any = None) -> Any:
