@@ -6,10 +6,12 @@ FaceCV DeepFace API路由
 """
 
 import io
+import os
 import base64
 import time
 import asyncio
 import logging
+import traceback
 from typing import List, Dict, Any, Optional, Union
 from pathlib import Path
 from datetime import datetime
@@ -20,6 +22,7 @@ from PIL import Image
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, BackgroundTasks, Query
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
+from deepface import DeepFace
 
 from facecv.core.webhook import webhook_manager, WebhookConfig, send_recognition_event
 
@@ -28,7 +31,8 @@ from facecv.schemas.face import (
     FaceRecognitionRequest, FaceRecognitionResponse,
     FaceVerificationRequest, FaceVerificationResponse,
     FaceAnalysisRequest, FaceAnalysisResponse,
-    FaceListResponse, FaceUpdateRequest, FaceDeleteResponse
+    FaceListResponse, FaceUpdateRequest, FaceDeleteResponse,
+    RecognitionResult
 )
 
 logger = logging.getLogger(__name__)
