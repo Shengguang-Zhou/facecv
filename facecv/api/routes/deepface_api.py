@@ -640,12 +640,17 @@ async def analyze_face(
         )
         
     except Exception as e:
+        import traceback
+        error_trace = traceback.format_exc()
         logger.error(f"人脸分析异常: {e}")
+        logger.error(f"详细错误: {error_trace}")
+        
         return JSONResponse(
-            status_code=400,
+            status_code=500,  # 使用500状态码以便更容易识别服务器错误
             content={
                 "success": False,
                 "error": f"人脸分析失败: {str(e)}",
+                "error_type": str(type(e).__name__),
                 "faces": [],
                 "total_faces": 0
             }
