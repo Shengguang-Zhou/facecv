@@ -40,21 +40,25 @@ deepface_recognizer = None
 face_embedding = None
 face_verification = None
 face_analysis = None
+face_detection = None
 
 def get_deepface_components():
     """获取DeepFace组件实例（延迟加载）"""
-    global deepface_recognizer, face_embedding, face_verification, face_analysis
+    global deepface_recognizer, face_embedding, face_verification, face_analysis, face_detection
     
     if deepface_recognizer is None:
         try:
-            from facecv.models.deepface import (
-                DeepFaceRecognizer, face_embedding as fe, 
-                face_verification as fv, face_analysis as fa
-            )
+            from facecv.models.deepface.recognizer import DeepFaceRecognizer
+            import facecv.models.deepface.face_embedding as fe
+            import facecv.models.deepface.face_verification as fv
+            import facecv.models.deepface.face_analysis as fa
+            import facecv.models.deepface.face_detection as fd
+            
             deepface_recognizer = DeepFaceRecognizer()
             face_embedding = fe
             face_verification = fv
             face_analysis = fa
+            face_detection = fd
             logger.info("DeepFace组件初始化成功")
         except ImportError as e:
             logger.error(f"DeepFace组件初始化失败: {e}")
@@ -63,7 +67,7 @@ def get_deepface_components():
                 detail=f"DeepFace服务不可用，请确保已安装相关依赖: {str(e)}"
             )
     
-    return deepface_recognizer, face_embedding, face_verification, face_analysis
+    return deepface_recognizer, face_embedding, face_verification, face_analysis, face_detection
 
 
 # ==================== 数据模型 ====================
@@ -114,7 +118,7 @@ async def register_face(
     - 元数据格式示例：{"department": "技术部", "employee_id": "E001"}
     """
     try:
-        recognizer, embedding_mgr, _, _ = get_deepface_components()
+        recognizer, embedding_mgr, _, _, _ = get_deepface_components()
         
         # 读取上传的图片
         image_data = await file.read()
@@ -135,17 +139,18 @@ async def register_face(
                 logger.warning(f"无效的元数据格式: {metadata}")
         
         # 注册人脸
-        success = await recognizer.register_face_async(
+        face_id = await recognizer.register_face_async(
             name=name,
             image=image_array,
             metadata=parsed_metadata
         )
         
-        if success:
+        if face_id:
             return FaceRegisterResponse(
                 success=True,
                 message=f"人脸注册成功: {name}",
-                person_name=name
+                person_name=name,
+                face_id=face_id
             )
         else:
             raise HTTPException(status_code=400, detail="人脸注册失败，可能无法检测到清晰的人脸")
@@ -171,7 +176,7 @@ async def list_faces():
     - total `int`: 人脸总数量
     """
     try:
-        recognizer, _, _, _ = get_deepface_components()
+        recognizer, _, _, _, _ = get_deepface_components()
         
         # 获取所有用户
         face_list = recognizer.list_faces()
@@ -232,18 +237,18 @@ async def update_face(
     - 500: 服务器内部错误
     """
     try:
-        recognizer, embedding_mgr, _, _ = get_deepface_components()
+        recognizer, _, _, _, _ = get_deepface_components()
         
         # 获取当前用户信息
-        current_user = await embedding_mgr.get_user(face_id)
-        if not current_user or not current_user.get("ids"):
+        current_face = await recognizer.get_face_by_id_async(face_id)
+        if not current_face:
             raise HTTPException(status_code=404, detail=f"未找到face_id: {face_id}")
         
-        current_name = current_user["metadatas"][0].get("name", "Unknown")
+        current_name = current_face.get("name", "Unknown")
         
         # 更新姓名
         if name and name != current_name:
-            await embedding_mgr.update_name(face_id, name)
+            await recognizer.update_face_async(face_id, name=name)
             logger.info(f"更新姓名: {current_name} -> {name}")
         
         # 更新图片（需要重新注册）
@@ -256,13 +261,13 @@ async def update_face(
                 image_array = cv2.cvtColor(image_array, cv2.COLOR_RGB2BGR)
             
             # 删除旧记录并重新注册
-            await embedding_mgr.del_user(face_id)
-            success = await recognizer.register_face_async(
+            await recognizer.delete_face_async(face_id)
+            new_face_id = await recognizer.register_face_async(
                 name=name or current_name,
                 image=image_array
             )
             
-            if not success:
+            if not new_face_id:
                 raise HTTPException(status_code=400, detail="更新人脸图片失败")
         
         return JSONResponse(
@@ -301,15 +306,15 @@ async def delete_face(face_id: str):
     - 建议在删除前先备份重要数据
     """
     try:
-        _, embedding_mgr, _, _ = get_deepface_components()
+        recognizer, _, _, _, _ = get_deepface_components()
         
         # 检查用户是否存在
-        user = await embedding_mgr.get_user(face_id)
-        if not user or not user.get("ids"):
+        face = await recognizer.get_face_by_id_async(face_id)
+        if not face:
             raise HTTPException(status_code=404, detail=f"未找到face_id: {face_id}")
         
         # 删除用户
-        result = await embedding_mgr.del_user(face_id)
+        result = await recognizer.delete_face_async(face_id)
         
         return FaceDeleteResponse(
             success=True,
@@ -357,19 +362,19 @@ async def get_face_by_name(name: str):
     - 一个姓名可能对应多条人脸记录
     """
     try:
-        _, embedding_mgr, _, _ = get_deepface_components()
+        recognizer, _, _, _, _ = get_deepface_components()
         
-        users = await embedding_mgr.get_user_by_name(name)
+        faces_data = await recognizer.get_faces_by_name_async(name)
         
-        if not users or not users.get("ids"):
+        if not faces_data or len(faces_data) == 0:
             raise HTTPException(status_code=404, detail=f"未找到姓名: {name}")
         
         faces = []
-        for i, face_id in enumerate(users["ids"]):
-            metadata = users["metadatas"][i] if i < len(users["metadatas"]) else {}
+        for face in faces_data:
+            metadata = face.get("metadata", {})
             faces.append({
-                "face_id": face_id,
-                "person_name": metadata.get("name", name),
+                "face_id": face.get("id"),
+                "person_name": face.get("name", name),
                 "created_at": metadata.get("created_at"),
                 "metadata": metadata
             })
@@ -385,7 +390,7 @@ async def get_face_by_name(name: str):
 
 # ==================== 识别和验证API ====================
 
-@router.post("/recognition", response_model=FaceRecognitionResponse, summary="人脸识别")
+@router.post("/recognize", response_model=FaceRecognitionResponse, summary="人脸识别")
 async def recognize_faces(
     file: UploadFile = File(..., description="包含待识别人脸的图片文件"),
     threshold: Optional[float] = Form(0.6, description="识别相似度阈值 (0.0-1.0)"),
@@ -413,7 +418,7 @@ async def recognize_faces(
     - processing_time `float`: 处理时间（秒）
     """
     try:
-        recognizer, _, _, _ = get_deepface_components()
+        recognizer, _, _, _, _ = get_deepface_components()
         
         # 读取图片
         image_data = await file.read()
@@ -451,7 +456,7 @@ async def recognize_faces(
         raise HTTPException(status_code=500, detail=f"服务器内部错误: {str(e)}")
 
 
-@router.post("/verify/", response_model=FaceVerificationResponse, summary="人脸验证")
+@router.post("/verify", response_model=FaceVerificationResponse, summary="人脸验证")
 async def verify_faces(
     file1: UploadFile = File(..., description="第一张人脸图片文件"),
     file2: UploadFile = File(..., description="第二张人脸图片文件"),
@@ -486,7 +491,7 @@ async def verify_faces(
     - DeepFace: Facebook开发的模型
     """
     try:
-        _, _, verification, _ = get_deepface_components()
+        _, _, verification, _, _ = get_deepface_components()
         
         # 读取两张图片
         image1_data = await file1.read()
@@ -504,7 +509,7 @@ async def verify_faces(
             image_2=image2_array,
             threshold=threshold,
             model_name=model_name,
-            anti_spoofing=anti_spoofing
+            detector_backend="retinaface"
         )
         
         return FaceVerificationResponse(
@@ -520,7 +525,7 @@ async def verify_faces(
         raise HTTPException(status_code=500, detail=f"服务器内部错误: {str(e)}")
 
 
-@router.post("/analyze/", response_model=FaceAnalysisResponse, summary="人脸属性分析")
+@router.post("/analyze", response_model=FaceAnalysisResponse, summary="人脸属性分析")
 async def analyze_face(
     file: UploadFile = File(..., description="待分析的人脸图片文件"),
     actions: str = Form("emotion,age,gender,race", description="分析维度列表，逗号分隔"),
@@ -558,7 +563,7 @@ async def analyze_face(
     - retinaface: RetinaFace检测器
     """
     try:
-        _, _, _, analysis = get_deepface_components()
+        _, _, _, analysis, _ = get_deepface_components()
         
         # 读取图片
         image_data = await file.read()
@@ -572,7 +577,9 @@ async def analyze_face(
         results = await analysis.face_analysis(
             img_path=image_array,
             actions=action_list,
-            detector_backend=detector_backend
+            detector_backend=detector_backend,
+            enforce_detection=True,
+            align=True
         )
         
         return FaceAnalysisResponse(
@@ -582,6 +589,86 @@ async def analyze_face(
         
     except Exception as e:
         logger.error(f"人脸分析异常: {e}")
+@router.post("/detect/", summary="人脸检测")
+async def detect_faces(
+    file: UploadFile = File(..., description="待检测的人脸图片文件"),
+    detector_backend: str = Form("retinaface", description="人脸检测器后端"),
+    enforce_detection: bool = Form(True, description="是否强制检测人脸"),
+    align: bool = Form(True, description="是否对齐人脸")
+):
+    """
+    使用DeepFace技术检测图片中的所有人脸
+    
+    此接口分析上传图片中的所有人脸，返回人脸位置、大小和检测置信度。
+    支持多种检测器后端，可用于人脸定位和预处理。
+    
+    **请求参数:**
+    - file `UploadFile`: 待检测的人脸图片文件 (JPG, PNG, BMP)
+    - detector_backend `str`: 人脸检测器，可选：mtcnn, opencv, ssd, dlib, retinaface
+    - enforce_detection `bool`: 是否强制检测人脸，如果为false则在未检测到人脸时不会报错
+    - align `bool`: 是否对齐检测到的人脸
+    
+    **响应数据:**
+    - faces `List[Dict]`: 检测到的人脸列表，每个对象包含：
+      - facial_area `Dict`: 人脸区域坐标 (x, y, w, h)
+      - confidence `float`: 检测置信度
+      - aligned_face `str`: Base64编码的对齐后人脸图像（当align=true时）
+    - total_faces `int`: 检测到的人脸总数
+    - processing_time `float`: 处理时间（秒）
+    
+    **检测器说明:**
+    - retinaface: 高精度检测器（推荐）
+    - mtcnn: 多任务CNN检测器
+    - opencv: OpenCV Haar级联检测器
+    - ssd: 单发多盒检测器
+    - dlib: dlib HOG检测器
+    """
+    try:
+        _, _, _, _, detection = get_deepface_components()
+        
+        # 读取图片
+        image_data = await file.read()
+        image = Image.open(io.BytesIO(image_data))
+        image_array = np.array(image)
+        
+        if len(image_array.shape) == 3:
+            image_array = cv2.cvtColor(image_array, cv2.COLOR_RGB2BGR)
+        
+        start_time = datetime.now()
+        faces = await detection.face_detection(
+            img_path=image_array,
+            detector_backend=detector_backend,
+            enforce_detection=enforce_detection,
+            align=align
+        )
+        processing_time = (datetime.now() - start_time).total_seconds()
+        
+        result_faces = []
+        for face in faces:
+            face_dict = {
+                "facial_area": face.get("facial_area", {}),
+                "confidence": face.get("confidence", 0.0)
+            }
+            
+            if align and "face" in face:
+                aligned_face = face["face"]
+                if isinstance(aligned_face, np.ndarray):
+                    _, buffer = cv2.imencode('.jpg', aligned_face)
+                    face_dict["aligned_face"] = base64.b64encode(buffer).decode('utf-8')
+            
+            result_faces.append(face_dict)
+        
+        return {
+            "faces": result_faces,
+            "total_faces": len(result_faces),
+            "processing_time": processing_time
+        }
+        
+    except Exception as e:
+        logger.error(f"人脸检测异常: {e}")
+        raise HTTPException(status_code=500, detail=f"服务器内部错误: {str(e)}")
+
+
         raise HTTPException(status_code=500, detail=f"服务器内部错误: {str(e)}")
 
 
@@ -638,7 +725,7 @@ async def add_face_from_video(
     - 采样质量会影响后续识别效果
     """
     try:
-        recognizer, _, _, _ = get_deepface_components()
+        recognizer, _, _, _, _ = get_deepface_components()
         
         # 启动后台任务处理视频采样
         background_tasks.add_task(
@@ -744,7 +831,7 @@ async def real_time_recognition_stream(
     - 流会在客户端断开连接时自动停止
     """
     try:
-        recognizer, _, _, _ = get_deepface_components()
+        recognizer, _, _, _, _ = get_deepface_components()
         
         # 转换source为整数（如果是数字）
         try:
