@@ -403,6 +403,55 @@ async def get_face_by_name(name: str):
         raise HTTPException(status_code=500, detail=f"服务器内部错误: {str(e)}")
 
 
+@router.delete("/faces/name/{name}", response_model=FaceDeleteResponse, summary="按姓名删除人脸")
+async def delete_faces_by_name(name: str):
+    """
+    根据人员姓名删除所有相关的人脸记录
+    
+    此接口永久删除指定姓名的所有人脸记录，包括其特征数据和元数据信息。
+    删除操作不可逆，请谨慎使用。
+    
+    **路径参数:**
+    - name `str`: 要删除的人员姓名，需要完全匹配
+    
+    **响应数据:**
+    - success `bool`: 删除是否成功
+    - message `str`: 删除状态确认消息，包含删除的人脸数量
+    
+    **错误码:**
+    - 404: 指定姓名不存在任何人脸记录
+    - 500: 服务器内部错误
+    
+    **注意事项:**
+    - 删除操作不可撤销
+    - 将删除该姓名下的所有人脸记录
+    - 删除后该人员的所有人脸将无法在识别中被匹配
+    - 建议在删除前先备份重要数据
+    """
+    try:
+        recognizer, _, _, _, _ = get_deepface_components()
+        
+        # 检查用户是否存在
+        faces_data = await recognizer.get_faces_by_name_async(name)
+        
+        if not faces_data or len(faces_data) == 0:
+            raise HTTPException(status_code=404, detail=f"未找到姓名: {name}")
+        
+        # 删除用户
+        count = await recognizer.delete_faces_by_name_async(name)
+        
+        return FaceDeleteResponse(
+            success=True,
+            message=f"成功删除 {name} 的 {count} 个人脸记录"
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"按姓名删除人脸异常: {e}")
+        raise HTTPException(status_code=500, detail=f"服务器内部错误: {str(e)}")
+
+
 # ==================== 识别和验证API ====================
 
 @router.post("/recognize", response_model=FaceRecognitionResponse, summary="人脸识别")
@@ -433,6 +482,7 @@ async def recognize_faces(
     - processing_time `float`: 处理时间（秒）
     """
     try:
+        start_time = time.time()
         recognizer, _, _, _, _ = get_deepface_components()
         
         # 读取图片
@@ -443,11 +493,92 @@ async def recognize_faces(
         if len(image_array.shape) == 3:
             image_array = cv2.cvtColor(image_array, cv2.COLOR_RGB2BGR)
         
+        try:
+            faces_detected = DeepFace.extract_faces(
+                img_path=image_array,
+                detector_backend=recognizer.detector_backend,
+                enforce_detection=True,
+                align=True
+            )
+            
+            if not faces_detected or len(faces_detected) == 0:
+                logger.warning("未检测到人脸")
+                return FaceRecognitionResponse(
+                    faces=[],
+                    total_faces=0,
+                    processing_time=time.time() - start_time
+                )
+                
+            logger.info(f"检测到 {len(faces_detected)} 个人脸")
+        except Exception as e:
+            logger.error(f"人脸检测失败: {e}")
+            return FaceRecognitionResponse(
+                faces=[],
+                total_faces=0,
+                processing_time=time.time() - start_time
+            )
+        
         # 执行识别
         results = await recognizer.recognize_face_async(
             image=image_array,
             threshold=threshold
         )
+        
+        if not results and faces_detected and len(faces_detected) > 0:
+            logger.info("使用DeepFace直接进行识别")
+            
+            all_faces = await recognizer.list_faces_async()
+            
+            if not all_faces or len(all_faces) == 0:
+                logger.warning("数据库中没有注册的人脸")
+                return FaceRecognitionResponse(
+                    faces=[],
+                    total_faces=0,
+                    processing_time=time.time() - start_time
+                )
+            
+            temp_db_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "temp_faces")
+            os.makedirs(temp_db_path, exist_ok=True)
+            
+            query_path = os.path.join(temp_db_path, "query.jpg")
+            cv2.imwrite(query_path, image_array)
+            
+            try:
+                df_results = DeepFace.find(
+                    img_path=query_path,
+                    db_path=temp_db_path,
+                    model_name=recognizer.model_name,
+                    detector_backend=recognizer.detector_backend,
+                    distance_metric=recognizer.distance_metric,
+                    enforce_detection=False,
+                    align=True
+                )
+                
+                if isinstance(df_results, list) and len(df_results) > 0 and not df_results[0].empty:
+                    for face_idx, df_result in enumerate(df_results):
+                        if not df_result.empty:
+                            best_match = df_result.iloc[0]
+                            face_id = best_match.get("identity", "unknown")
+                            distance = best_match.get("distance", 1.0)
+                            
+                            face_info = None
+                            for face in all_faces:
+                                if face.get("id") == face_id:
+                                    face_info = face
+                                    break
+                            
+                            if face_info:
+                                face_region = faces_detected[face_idx]["facial_area"]
+                                result = RecognitionResult(
+                                    person_name=face_info.get("name", "Unknown"),
+                                    confidence=1.0 - distance,
+                                    bbox=[face_region["x"], face_region["y"], face_region["w"], face_region["h"]],
+                                    face_id=face_id,
+                                    candidates=[]
+                                )
+                                results.append(result)
+            except Exception as e:
+                logger.error(f"DeepFace直接识别失败: {e}")
         
         # 转换结果格式
         faces = []
@@ -460,14 +591,18 @@ async def recognize_faces(
                 "candidates": getattr(result, 'candidates', []) if return_all_candidates else []
             })
         
+        processing_time = time.time() - start_time
+        logger.info(f"识别完成，处理时间: {processing_time:.2f}秒，识别到 {len(faces)} 个人脸")
+        
         return FaceRecognitionResponse(
             faces=faces,
             total_faces=len(faces),
-            processing_time=0.0  # TODO: 添加计时
+            processing_time=processing_time
         )
         
     except Exception as e:
         logger.error(f"人脸识别异常: {e}")
+        logger.error(traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"服务器内部错误: {str(e)}")
 
 
