@@ -198,16 +198,28 @@ async def list_faces():
         recognizer, _, _, _, _ = get_deepface_components()
         
         # 获取所有用户
-        face_list = recognizer.list_faces()
+        face_list = await recognizer.list_faces_async()
         
         faces = []
         for face_data in face_list:
-            faces.append({
-                "face_id": face_data.face_id,
-                "person_name": face_data.person_name,
-                "created_at": face_data.metadata.get("created_at") if face_data.metadata else None,
-                "metadata": face_data.metadata or {}
-            })
+            if isinstance(face_data, dict):
+                faces.append({
+                    "face_id": face_data.get("id") or face_data.get("face_id"),
+                    "person_name": face_data.get("name") or face_data.get("person_name"),
+                    "created_at": face_data.get("created_at") or (face_data.get("metadata", {}) or {}).get("created_at"),
+                    "metadata": face_data.get("metadata") or {}
+                })
+            else:
+                try:
+                    faces.append({
+                        "face_id": getattr(face_data, "face_id", None) or getattr(face_data, "id", None),
+                        "person_name": getattr(face_data, "person_name", None) or getattr(face_data, "name", None),
+                        "created_at": getattr(face_data, "created_at", None) or (getattr(face_data, "metadata", {}) or {}).get("created_at"),
+                        "metadata": getattr(face_data, "metadata", {}) or {}
+                    })
+                except Exception as e:
+                    logger.error(f"处理人脸数据时出错: {e}, 数据类型: {type(face_data)}")
+                    continue
         
         return FaceListResponse(
             faces=faces,
@@ -805,6 +817,7 @@ async def analyze_face(
                 "total_faces": 0
             }
         )
+@router.post("/detect", summary="人脸检测")
 @router.post("/detect/", summary="人脸检测")
 async def detect_faces(
     file: UploadFile = File(..., description="待检测的人脸图片文件"),

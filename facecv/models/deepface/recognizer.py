@@ -158,6 +158,14 @@ class DeepFaceRecognizer:
             threshold = self.similarity_threshold
             
         try:
+            all_faces = self.face_db.get_all_faces()
+            
+            if not all_faces or len(all_faces) == 0:
+                logger.warning("数据库中没有注册的人脸")
+                return []
+                
+            logger.info(f"数据库中有 {len(all_faces)} 个注册人脸")
+            
             faces = DeepFace.extract_faces(
                 img_path=image,
                 detector_backend=self.detector_backend,
@@ -165,12 +173,19 @@ class DeepFaceRecognizer:
                 align=True
             )
             
+            if not faces or len(faces) == 0:
+                logger.warning("未检测到人脸")
+                return []
+                
+            logger.info(f"检测到 {len(faces)} 个人脸")
+            
             results = []
             
-            for face_info in faces:
+            for face_idx, face_info in enumerate(faces):
                 face_img = face_info["face"]
                 region = face_info["facial_area"]
                 
+                # 提取人脸特征向量
                 embedding_obj = DeepFace.represent(
                     img_path=face_img,
                     model_name=self.model_name,
@@ -186,21 +201,40 @@ class DeepFaceRecognizer:
                     
                     if matches and len(matches) > 0:
                         best_match = matches[0]
+                        distance = best_match.get("distance", 0.5)
+                        confidence = 1.0 - distance
                         
-                        result = RecognitionResult(
-                            person_name=best_match["name"],
-                            confidence=1.0 - best_match.get("distance", 0.5),  # 转换距离为置信度
-                            bbox=[region["x"], region["y"], region["w"], region["h"]],
-                            face_id=best_match["id"],
-                            candidates=[{
-                                "face_id": m["id"],
-                                "name": m["name"],
-                                "confidence": 1.0 - m.get("distance", 0.5)
-                            } for m in matches]
-                        )
-                        
-                        results.append(result)
+                        if confidence >= threshold:
+                            result = RecognitionResult(
+                                person_name=best_match["name"],
+                                confidence=confidence,
+                                bbox=[region["x"], region["y"], region["w"], region["h"]],
+                                face_id=best_match["id"],
+                                candidates=[{
+                                    "face_id": m["id"],
+                                    "name": m["name"],
+                                    "confidence": 1.0 - m.get("distance", 0.5)
+                                } for m in matches]
+                            )
+                            
+                            logger.info(f"人脸 {face_idx+1} 匹配成功: {best_match['name']}, 置信度: {confidence:.4f}")
+                            results.append(result)
+                        else:
+                            logger.info(f"人脸 {face_idx+1} 匹配置信度 {confidence:.4f} 低于阈值 {threshold}")
+                            result = RecognitionResult(
+                                person_name="Unknown",
+                                confidence=confidence,
+                                bbox=[region["x"], region["y"], region["w"], region["h"]],
+                                face_id=None,
+                                candidates=[{
+                                    "face_id": m["id"],
+                                    "name": m["name"],
+                                    "confidence": 1.0 - m.get("distance", 0.5)
+                                } for m in matches]
+                            )
+                            results.append(result)
                     else:
+                        logger.info(f"人脸 {face_idx+1} 没有匹配结果")
                         result = RecognitionResult(
                             person_name="Unknown",
                             confidence=0.0,
@@ -209,11 +243,15 @@ class DeepFaceRecognizer:
                             candidates=[]
                         )
                         results.append(result)
+                else:
+                    logger.warning(f"无法提取人脸 {face_idx+1} 的特征向量")
             
             return results
             
         except Exception as e:
             logger.error(f"识别人脸失败: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
             return []
     
     async def list_faces_async(self) -> List[Dict]:
@@ -224,8 +262,17 @@ class DeepFaceRecognizer:
             人脸信息列表
         """
         loop = asyncio.get_event_loop()
-        faces = await loop.run_in_executor(None, self.face_db.get_all_faces)
-        return faces
+        try:
+            faces = await loop.run_in_executor(None, self.face_db.get_all_faces)
+            if faces is None:
+                logger.warning("数据库返回的人脸列表为None")
+                return []
+            return faces
+        except Exception as e:
+            logger.error(f"获取人脸列表失败: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return []
     
     async def get_face_by_id_async(self, face_id: str) -> Optional[Dict]:
         """
@@ -295,16 +342,27 @@ class DeepFaceRecognizer:
         Returns:
             是否更新成功
         """
-        face = await self.get_face_by_id_async(face_id)
-        if not face:
+        try:
+            face = await self.get_face_by_id_async(face_id)
+            if not face:
+                logger.warning(f"未找到ID为 {face_id} 的人脸")
+                return False
+            
+            current_name = face.get("name") if face else None
+            current_metadata = face.get("metadata", {}) if face else {}
+            
+            update_name = name if name is not None else current_name
+            update_metadata = metadata if metadata is not None else current_metadata
+            
+            loop = asyncio.get_event_loop()
+            
+            def update_face_wrapper():
+                return self.face_db.update_face(face_id, update_name, update_metadata)
+                
+            success = await loop.run_in_executor(None, update_face_wrapper)
+            return success
+        except Exception as e:
+            logger.error(f"更新人脸失败: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
             return False
-        
-        loop = asyncio.get_event_loop()
-        success = await loop.run_in_executor(
-            None, 
-            self.face_db.update_face, 
-            face_id, 
-            name or face.get("name"),
-            metadata or face.get("metadata", {})
-        )
-        return success
