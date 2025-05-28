@@ -75,7 +75,7 @@ class ChromaFaceDB(AbstractFaceDB):
             # ChromaDB requires all metadata values to be strings, ints, floats, or bools
             for key, value in metadata.items():
                 if isinstance(value, (str, int, float, bool)):
-                    meta[key] = value
+                    meta[key] = str(value)
                 else:
                     meta[key] = json.dumps(value)
         
@@ -422,11 +422,27 @@ class ChromaFaceDB(AbstractFaceDB):
     
     def query_faces_by_embedding(self, embedding: np.ndarray, top_k: int = 10) -> List[Dict[str, Any]]:
         """Query faces by embedding vector"""
-        # Convert numpy array to list
-        embedding_list = embedding.tolist() if isinstance(embedding, np.ndarray) else embedding
+        # Convert embedding to list format for ChromaDB
+        embedding_list = []
+        if isinstance(embedding, np.ndarray):
+            embedding_list = embedding.tolist()
+        elif isinstance(embedding, list):
+            embedding_list = embedding
+        else:
+            logger.warning(f"Unexpected embedding type: {type(embedding)}")
+            try:
+                embedding_list = list(embedding)
+            except Exception as e:
+                logger.error(f"Failed to convert embedding to list: {e}")
+                return []
         
-        # Use existing search method but return in expected format
-        similar_faces = self.search_similar_faces(embedding_list, threshold=0.0, limit=top_k)
+        try:
+            embedding_list = [float(x) for x in embedding_list]
+            # Use existing search method but return in expected format
+            similar_faces = self.search_similar_faces(embedding_list, threshold=0.0, limit=top_k)
+        except Exception as e:
+            logger.error(f"Error querying faces by embedding: {e}")
+            return []
         
         # Convert to expected format
         results = []
