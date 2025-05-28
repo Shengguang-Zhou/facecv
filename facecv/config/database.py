@@ -54,7 +54,7 @@ class DatabaseConfig:
     
     def _validate_config(self):
         """验证配置参数"""
-        if self.db_type not in ["sqlite", "mysql", "chromadb"]:
+        if self.db_type not in ["sqlite", "mysql", "chromadb", "hybrid"]:
             raise ValueError(f"不支持的数据库类型: {self.db_type}")
         
         if not (1 <= self.mysql_port <= 65535):
@@ -187,6 +187,8 @@ class DatabaseConfig:
             return self.sqlite_url
         elif self.db_type == "chromadb":
             return self.get_chromadb_path()
+        elif self.db_type == "hybrid":
+            return self.mysql_url
         else:
             raise ValueError(f"不支持的数据库类型: {self.db_type}")
     
@@ -216,7 +218,7 @@ class DatabaseConfig:
 db_config = DatabaseConfig.from_env()
 
 # 配置常量
-SUPPORTED_DB_TYPES = ["sqlite", "mysql", "chromadb"]
+SUPPORTED_DB_TYPES = ["sqlite", "mysql", "chromadb", "hybrid"]
 DEFAULT_DB_TYPE = "sqlite"
 DEFAULT_SQLITE_FILENAME = "facecv.db"
 # ChromaDB配置应从环境变量加载，不应硬编码
