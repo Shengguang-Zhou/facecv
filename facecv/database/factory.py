@@ -6,11 +6,14 @@ from .abstract_facedb import AbstractFaceDB
 from .sqlite_facedb import SQLiteFaceDB
 from ..config import get_db_config
 
+from .hybrid_facedb import HybridFaceDB
+
 db_config = get_db_config()
 
 # 延迟导入以避免依赖问题
 _mysql_facedb = None
 _chromadb_facedb = None
+_hybrid_facedb = None
 
 logging.basicConfig(level=logging.INFO)
 
@@ -46,6 +49,20 @@ def get_chromadb_facedb():
     return _chromadb_facedb if _chromadb_facedb is not False else None
 
 
+def get_hybrid_facedb():
+    """延迟导入Hybrid数据库类"""
+    global _hybrid_facedb
+    if _hybrid_facedb is None:
+        try:
+            from .hybrid_facedb import HybridFaceDB
+            _hybrid_facedb = HybridFaceDB
+            logging.info("Hybrid database is available and ready to use")
+        except ImportError as e:
+            logging.error(f"Hybrid数据库不可用: {e}")
+            _hybrid_facedb = False
+    return _hybrid_facedb if _hybrid_facedb is not False else None
+
+
 class FaceDBFactory:
     """人脸数据库工厂类"""
     
@@ -53,6 +70,7 @@ class FaceDBFactory:
         'sqlite': SQLiteFaceDB,
         'mysql': get_mysql_facedb,
         'chromadb': get_chromadb_facedb,
+        'hybrid': get_hybrid_facedb,
     }
     
     @classmethod
@@ -107,6 +125,10 @@ class FaceDBFactory:
                 persist_directory = kwargs.get('persist_directory')
                 collection_name = kwargs.get('collection_name', 'face_embeddings')
                 return db_class(persist_directory=persist_directory, collection_name=collection_name)
+            
+            elif db_type == 'hybrid':
+                return db_class(config=config or db_config)
+            
             
             else:
                 # 通用情况，传递所有参数

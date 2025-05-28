@@ -75,7 +75,7 @@ class ChromaFaceDB(AbstractFaceDB):
             # ChromaDB requires all metadata values to be strings, ints, floats, or bools
             for key, value in metadata.items():
                 if isinstance(value, (str, int, float, bool)):
-                    meta[key] = value
+                    meta[key] = str(value)
                 else:
                     meta[key] = json.dumps(value)
         
@@ -420,25 +420,65 @@ class ChromaFaceDB(AbstractFaceDB):
         """Get face by ID - alias for get_face"""
         return self.get_face(face_id)
     
-    def query_faces_by_embedding(self, embedding: np.ndarray, top_k: int = 10) -> List[Dict[str, Any]]:
+    def query_faces_by_embedding(self, embedding: np.ndarray, top_k: int = 10, threshold: float = 0.0) -> List[Dict[str, Any]]:
         """Query faces by embedding vector"""
-        # Convert numpy array to list
-        embedding_list = embedding.tolist() if isinstance(embedding, np.ndarray) else embedding
+        # Convert embedding to list format for ChromaDB
+        embedding_list = []
+        if isinstance(embedding, np.ndarray):
+            embedding_list = embedding.tolist()
+        elif isinstance(embedding, list):
+            embedding_list = embedding
+        else:
+            logger.warning(f"Unexpected embedding type: {type(embedding)}")
+            try:
+                embedding_list = list(embedding)
+            except Exception as e:
+                logger.error(f"Failed to convert embedding to list: {e}")
+                return []
         
-        # Use existing search method but return in expected format
-        similar_faces = self.search_similar_faces(embedding_list, threshold=0.0, limit=top_k)
+        try:
+            if isinstance(embedding_list, list) and len(embedding_list) > 0 and isinstance(embedding_list[0], list):
+                embedding_list = embedding_list[0]
+                
+            embedding_list = [float(x) for x in embedding_list]
+            
+            # Use existing search method but return in expected format
+            similar_faces = self.search_similar_faces(embedding_list, threshold=threshold, limit=top_k)
+        except Exception as e:
+            logger.error(f"Error querying faces by embedding: {e}")
+            return []
         
         # Convert to expected format
         results = []
         for face_dict, similarity in similar_faces:
             face_copy = face_dict.copy()
-            face_copy['similarity_score'] = similarity
+            face_copy['similarity'] = similarity
             results.append(face_copy)
         
         return results
+        
+    def get(self, ids: List[str]) -> Dict[str, Any]:
+        """Get embeddings by IDs - compatibility method for ChromaDB"""
+        try:
+            if not ids:
+                return {"ids": [], "embeddings": [], "metadatas": []}
+                
+            results = self.collection.get(
+                ids=ids,
+                include=["embeddings", "metadatas"]
+            )
+            
+            return results
+        except Exception as e:
+            logger.error(f"Error getting embeddings by IDs: {e}")
+            return {"ids": [], "embeddings": [], "metadatas": []}
     
     def query_faces_by_name(self, name: str) -> List[Dict[str, Any]]:
         """Query faces by name - alias for get_faces_by_name"""
         return self.get_faces_by_name(name)
+        
+    def count(self) -> int:
+        """Get total number of faces (compatibility method)"""
+        return self.get_face_count()
 
 

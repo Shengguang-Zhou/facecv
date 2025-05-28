@@ -7,6 +7,7 @@ from PIL import Image
 import io
 import logging
 import cv2
+import uuid
 from datetime import datetime
 
 from facecv.models.insightface.onnx_recognizer import ONNXFaceRecognizer
@@ -310,22 +311,35 @@ async def get_available_models():
 
 async def process_upload_file(file: UploadFile) -> np.ndarray:
     """Process uploaded image file"""
-    contents = await file.read()
+    logger.info(f"Processing uploaded file: {file.filename}, content_type: {file.content_type}")
     
     try:
-        image = Image.open(io.BytesIO(contents))
-        if image.mode == 'RGBA':
-            rgb_image = Image.new('RGB', image.size, (255, 255, 255))
-            rgb_image.paste(image, mask=image.split()[3])
-            image = rgb_image
-        elif image.mode != 'RGB':
-            image = image.convert('RGB')
+        contents = await file.read()
+        logger.info(f"Read file contents, size: {len(contents)} bytes")
         
-        # Convert to BGR for OpenCV
-        image_array = np.array(image)
-        image_bgr = cv2.cvtColor(image_array, cv2.COLOR_RGB2BGR)
+        nparr = np.frombuffer(contents, np.uint8)
+        image_bgr = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        
+        if image_bgr is None:
+            logger.error("Failed to decode image with OpenCV")
+            raise ValueError("Failed to decode image with OpenCV")
+            
+        logger.info(f"Successfully decoded image with OpenCV, shape: {image_bgr.shape}")
+        
+        max_size = 1024
+        h, w = image_bgr.shape[:2]
+        if h > max_size or w > max_size:
+            scale = min(max_size / h, max_size / w)
+            new_h, new_w = int(h * scale), int(w * scale)
+            logger.info(f"Resizing image from {h}x{w} to {new_h}x{new_w}")
+            image_bgr = cv2.resize(image_bgr, (new_w, new_h))
+            
         return image_bgr
+        
     except Exception as e:
+        import traceback
+        logger.error(f"Error processing image: {str(e)}")
+        logger.error(traceback.format_exc())
         raise HTTPException(status_code=400, detail=f"Cannot process image: {str(e)}")
 
 # ==================== Detection Endpoints ====================
@@ -333,7 +347,8 @@ async def process_upload_file(file: UploadFile) -> np.ndarray:
 @router.post("/detect", response_model=List[FaceDetection], summary="人脸检测")
 async def detect_faces(
     file: UploadFile = File(..., description="待检测的图像文件"),
-    min_confidence: float = Query(0.5, description="最低检测置信度阈值")
+    model: str = Form("buffalo_s", description="人脸检测模型"),
+    min_confidence: float = Form(0.5, description="最低检测置信度阈值")
 ):
     """
     使用真实人脸检测模型检测上传图像中的人脸
@@ -343,32 +358,116 @@ async def detect_faces(
     
     **参数:**
     - file `UploadFile`: 包含待检测人脸的图像文件 (JPG, PNG)
+    - model `str`: 使用的模型名称 (默认: buffalo_s)
     - min_confidence `float`: 最低检测置信度阈值 (0.0-1.0, 默认: 0.5)
     
     **返回:**
     FaceDetection对象列表，包含:
     - bbox `List[int]`: 边界框坐标 [x1, y1, x2, y2]
     - confidence `float`: 检测置信度分数 (0.0-1.0)
-    - face_id `str`: 检测到的人脸唯一标识符
+    - id `str`: 检测到的人脸唯一标识符 (MySQL UUID)
     - landmarks `List[List[float]]`: 面部关键点坐标 (可选)
-    - age `int`: 估计年龄 (可选)
-    - gender `str`: 性别预测 (Male/Female, 可选)
     - quality_score `float`: 人脸质量评估分数 (可选)
+    - name `str`: 识别到的人员姓名 (如未识别则为"Unknown")
+    - similarity `float`: 相似度分数 (0.0-1.0)
     """
-    recognizer = get_recognizer()
-    image = await process_upload_file(file)
+    logger.info(f"Detect endpoint called with model: {model}, min_confidence: {min_confidence}")
     
     try:
+        image = await process_upload_file(file)
+        logger.info(f"Image processed successfully, shape: {image.shape}")
+        
+        max_size = 320
+        h, w = image.shape[:2]
+        if h > max_size or w > max_size:
+            scale = min(max_size / h, max_size / w)
+            new_h, new_w = int(h * scale), int(w * scale)
+            logger.info(f"Resizing image from {h}x{w} to {new_h}x{new_w}")
+            image = cv2.resize(image, (new_w, new_h))
+        
+        # Get the recognizer - use smaller model for better performance
+        from facecv.models.model_pool import get_model_recognizer
+        actual_model = "buffalo_s"  # Use smaller model for better performance
+        recognizer = get_model_recognizer(actual_model, "detect")
+        logger.info(f"Using recognizer: {type(recognizer).__name__} with model {actual_model}")
+        
         faces = recognizer.detect_faces(image)
+        logger.info(f"Detected {len(faces)} faces")
         
         # Filter by confidence
         filtered_faces = [f for f in faces if f.confidence >= min_confidence]
+        logger.info(f"Filtered to {len(filtered_faces)} faces with confidence >= {min_confidence}")
         
-        logger.info(f"Detected {len(filtered_faces)} faces (filtered from {len(faces)})")
-        return filtered_faces
+        for face in filtered_faces:
+            if not hasattr(face, 'id') or not face.id:
+                face.id = str(uuid.uuid4())
+            if not hasattr(face, 'name') or not face.name:
+                face.name = "Unknown"
+            if not hasattr(face, 'similarity') or face.similarity is None:
+                face.similarity = 0.0
+            if not hasattr(face, 'quality_score') or face.quality_score is None:
+                face.quality_score = 1.0
+        
+        if filtered_faces:
+            try:
+                from facecv.database.factory import create_face_database
+                face_db = create_face_database('hybrid')
+                logger.info(f"Created hybrid face database: {type(face_db).__name__}")
+                
+                for face in filtered_faces:
+                    x1, y1, x2, y2 = face.bbox
+                    if x1 < 0: x1 = 0
+                    if y1 < 0: y1 = 0
+                    if x2 > image.shape[1]: x2 = image.shape[1]
+                    if y2 > image.shape[0]: y2 = image.shape[0]
+                    
+                    if x2 <= x1 or y2 <= y1:
+                        logger.warning(f"Invalid bbox: {face.bbox}, skipping recognition")
+                        continue
+                    
+                    face_img = image[y1:y2, x1:x2]
+                    
+                    embedding = recognizer.extract_embedding(face_img)
+                    if embedding is None:
+                        logger.warning(f"Failed to extract embedding for face at {face.bbox}")
+                        continue
+                    
+                    similar_faces = face_db.query_faces_by_embedding(embedding, top_k=1, threshold=0.35)
+                    
+                    if similar_faces and similar_faces[0].get('similarity', 0) >= 0.35:
+                        match = similar_faces[0]
+                        face.id = match.get('id', face.id)
+                        face.name = match.get('name', "Unknown")
+                        face.similarity = match.get('similarity', 0.0)
+                        logger.info(f"Match found: {face.name} (ID: {face.id}, similarity: {face.similarity})")
+                    else:
+                        logger.info(f"No match found for face at {face.bbox}")
+                
+            except Exception as e:
+                logger.error(f"Error during recognition in detect endpoint: {e}")
+                import traceback
+                logger.error(traceback.format_exc())
+        
+        response_faces = []
+        for face in filtered_faces:
+            response_face = {
+                "bbox": face.bbox,
+                "confidence": face.confidence,
+                "id": face.id,
+                "landmarks": getattr(face, 'landmarks', []),
+                "quality_score": getattr(face, 'quality_score', 1.0),
+                "name": getattr(face, 'name', "Unknown"),
+                "similarity": getattr(face, 'similarity', 0.0)
+            }
+            response_faces.append(response_face)
+        
+        logger.info(f"Returning {len(response_faces)} faces with clean format")
+        return response_faces
         
     except Exception as e:
+        import traceback
         logger.error(f"Error detecting faces: {e}")
+        logger.error(traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"Detection failed: {str(e)}")
 
 # ==================== Verification Endpoints ====================
@@ -421,7 +520,8 @@ async def verify_faces(
 @router.post("/recognize", response_model=List[RecognitionResult], summary="人脸识别")
 async def recognize_faces(
     file: UploadFile = File(..., description="包含待识别人脸的图像"),
-    threshold: float = Query(0.4, description="识别匹配的相似度阈值")
+    threshold: float = Form(0.35, description="识别匹配的相似度阈值"),
+    model: str = Form("buffalo_s", description="使用的模型名称")
 ):
     """
     使用真实人脸识别技术识别上传图像中的人脸
@@ -431,29 +531,72 @@ async def recognize_faces(
     
     **参数:**
     - file `UploadFile`: 包含待识别人脸的图像文件 (JPG, PNG)
-    - threshold `float`: 识别匹配的相似度阈值 (0.0-1.0, 默认: 0.4)
+    - threshold `float`: 识别匹配的相似度阈值 (0.0-1.0, 默认: 0.35)
+    - model `str`: 使用的模型名称 (默认: buffalo_s)
     
     **返回:**
     RecognitionResult对象列表，包含:
     - name `str`: 从数据库中识别出的人员姓名
     - confidence `float`: 识别置信度分数 (0.0-1.0)
     - bbox `List[int]`: 人脸边界框坐标 [x1, y1, x2, y2]
-    - face_id `str`: 匹配人员的数据库人脸ID (可选)
-    - detection_score `float`: 人脸检测置信度分数 (可选)
-    - metadata `Dict[str, Any]`: 来自数据库的额外人员元数据 (可选)
-    - embedding `List[float]`: 人脸特征嵌入向量 (可选)
+    - id `str`: 匹配人员的数据库人脸ID (MySQL UUID)
+    - quality_score `float`: 人脸质量评估分数 (可选)
+    - similarity `float`: 相似度分数 (0.0-1.0)
     """
-    recognizer = get_recognizer()
-    image = await process_upload_file(file)
+    logger.info(f"Recognize endpoint called with model: {model}, threshold: {threshold}")
     
     try:
-        results = recognizer.recognize(image=image, threshold=threshold)
+        image = await process_upload_file(file)
+        logger.info(f"Image processed successfully, shape: {image.shape}")
         
+        max_size = 320
+        h, w = image.shape[:2]
+        if h > max_size or w > max_size:
+            scale = min(max_size / h, max_size / w)
+            new_h, new_w = int(h * scale), int(w * scale)
+            logger.info(f"Resizing image from {h}x{w} to {new_h}x{new_w}")
+            image = cv2.resize(image, (new_w, new_h))
+        
+        from facecv.database.factory import create_face_database
+        face_db = create_face_database('hybrid')
+        logger.info(f"Created hybrid face database: {type(face_db).__name__}")
+        
+        # Get the recognizer with the hybrid database
+        from facecv.models.model_pool import get_model_recognizer
+        actual_model = "buffalo_s"  # Use smaller model for better performance
+        recognizer = get_model_recognizer(actual_model, "recognize", face_db=face_db)
+        logger.info(f"Using recognizer: {type(recognizer).__name__} with model {actual_model}")
+        
+        results = recognizer.recognize(image, threshold=threshold)
         logger.info(f"Recognized {len(results)} faces")
-        return results
+        
+        response_results = []
+        for result in results:
+            # Convert to dict for easier manipulation
+            result_dict = result.dict() if hasattr(result, 'dict') else result
+            
+            if 'face_id' in result_dict and 'id' not in result_dict:
+                result_dict['id'] = result_dict.pop('face_id')
+            
+            if 'person_id' in result_dict:
+                result_dict.pop('person_id')
+                
+            if 'name' not in result_dict or not result_dict['name']:
+                result_dict['name'] = "Unknown"
+            if 'similarity' not in result_dict or result_dict['similarity'] is None:
+                result_dict['similarity'] = 0.0
+            if 'quality_score' not in result_dict or result_dict['quality_score'] is None:
+                result_dict['quality_score'] = 1.0
+                
+            response_results.append(result_dict)
+            
+        logger.info(f"Returning {len(response_results)} recognition results with clean format")
+        return response_results
         
     except Exception as e:
+        import traceback
         logger.error(f"Error recognizing faces: {e}")
+        logger.error(traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"Recognition failed: {str(e)}")
 
 @router.post("/register", response_model=FaceRegisterResponse, summary="人脸注册")
