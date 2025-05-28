@@ -103,6 +103,13 @@ app.include_router(webhook.router, prefix="/api/v1")
 app.include_router(insightface.router, prefix="/api/v1/insightface")
 app.include_router(camera_stream.router)
 
+try:
+    from facecv.api.routes import simple_detect
+    app.include_router(simple_detect.router, prefix="/api/v1/test")
+    logger.info("Simple test detection API loaded")
+except ImportError as e:
+    logger.warning(f"Simple test detection API not loaded: {e}")
+
 # Import and register batch processing routes
 from facecv.api.routes import batch_processing
 app.include_router(batch_processing.router)

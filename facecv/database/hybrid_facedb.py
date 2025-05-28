@@ -35,7 +35,18 @@ class HybridFaceDB(AbstractFaceDB):
         
         self.relational_db = MySQLFaceDB(**kwargs)
         
-        self.embedding_collection = ChromaFaceDB(**kwargs)
+        # Extract only the parameters needed for ChromaFaceDB
+        chroma_params = {}
+        if 'persist_directory' in kwargs:
+            chroma_params['persist_directory'] = kwargs['persist_directory']
+        else:
+            chroma_params['persist_directory'] = './chroma_db'
+            
+        if 'collection_name' in kwargs:
+            chroma_params['collection_name'] = kwargs.get('collection_name', 'face_embeddings')
+            
+        logger.info(f"Initializing ChromaFaceDB with params: {chroma_params}")
+        self.embedding_collection = ChromaFaceDB(**chroma_params)
         
         logger.info("Hybrid Face Database initialized with MySQL and ChromaDB backends")
     
@@ -54,14 +65,18 @@ class HybridFaceDB(AbstractFaceDB):
         if metadata is None:
             metadata = {}
             
+        # Generate a UUID for both MySQL and ChromaDB
         face_id = str(uuid.uuid4())
         
-        self.relational_db.add_face(name, embedding, metadata)
+        mysql_result = self.relational_db.add_face(name, embedding, metadata)
+        if mysql_result:
+            face_id = mysql_result
+            logger.info(f"Using MySQL-generated face ID: {face_id}")
         
         chroma_metadata = {
             'name': name,
             'created_at': datetime.now().isoformat(),
-            'mysql_id': face_id
+            'mysql_id': face_id  # Store the MySQL ID in ChromaDB metadata
         }
         
         for key, value in metadata.items():
@@ -73,9 +88,13 @@ class HybridFaceDB(AbstractFaceDB):
         
         embedding_list = []
         if isinstance(embedding, np.ndarray):
+            if embedding.shape[0] == 1 and len(embedding.shape) > 1:
+                embedding = embedding.flatten()
             embedding_list = embedding.tolist()
         elif isinstance(embedding, list):
             embedding_list = embedding
+            if len(embedding_list) > 0 and isinstance(embedding_list[0], list):
+                embedding_list = embedding_list[0]
         else:
             logger.warning(f"Unexpected embedding type: {type(embedding)}")
             try:
@@ -86,9 +105,29 @@ class HybridFaceDB(AbstractFaceDB):
         
         try:
             embedding_list = [float(x) for x in embedding_list]
-            self.embedding_collection.add_face(name, embedding_list, chroma_metadata)
+            
+            # Check if we need to pad or truncate the embedding
+            if len(embedding_list) != 512:
+                logger.warning(f"Embedding dimension mismatch: {len(embedding_list)} != 512")
+                
+                if len(embedding_list) < 512:
+                    padding = [0.0] * (512 - len(embedding_list))
+                    embedding_list.extend(padding)
+                    logger.info(f"Padded embedding to length 512")
+                else:
+                    embedding_list = embedding_list[:512]
+                    logger.info(f"Truncated embedding to length 512")
+            
+            self.embedding_collection.collection.add(
+                ids=[face_id],
+                embeddings=[embedding_list],
+                metadatas=[chroma_metadata]
+            )
+            logger.info(f"Added face to ChromaDB with ID: {face_id}")
         except Exception as e:
             logger.error(f"Error adding face to ChromaDB: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
         
         logger.info(f"Added face {face_id} to hybrid database")
         return face_id
@@ -203,33 +242,68 @@ class HybridFaceDB(AbstractFaceDB):
         """
         return self.relational_db.query_faces_by_name(name)
     
-    def query_faces_by_embedding(self, embedding: np.ndarray, top_k: int = 10) -> List[Dict[str, Any]]:
+    def query_faces_by_embedding(self, embedding: np.ndarray, top_k: int = 10, threshold: float = 0.0) -> List[Dict[str, Any]]:
         """
         根据特征向量查询相似人脸
         
         Args:
             embedding: 人脸特征向量
             top_k: 返回前 k 个最相似的结果
+            threshold: 相似度阈值，只返回相似度大于此值的结果
             
         Returns:
             人脸信息列表，包含相似度分数
         """
         embedding_list = []
         if isinstance(embedding, np.ndarray):
+            if embedding.shape[0] == 1 and len(embedding.shape) > 1:
+                embedding = embedding.flatten()
+            
             embedding_list = embedding.tolist()
+            logger.info(f"Embedding is numpy array with shape: {embedding.shape}")
         elif isinstance(embedding, list):
             embedding_list = embedding
+            logger.info(f"Embedding is list with length: {len(embedding)}")
+            
+            if len(embedding_list) > 0 and isinstance(embedding_list[0], list):
+                embedding_list = embedding_list[0]
+                logger.info(f"Flattened nested list to length: {len(embedding_list)}")
         else:
             logger.warning(f"Unexpected embedding type: {type(embedding)}")
             try:
                 embedding_list = list(embedding)
+                logger.info(f"Converted embedding to list with length: {len(embedding_list)}")
             except Exception as e:
                 logger.error(f"Failed to convert embedding to list: {e}")
                 return []
         
         try:
-            embedding_list = [float(x) for x in embedding_list]
-            similar_faces = self.embedding_collection.query_faces_by_embedding(embedding_list, top_k)
+            logger.info(f"ChromaDB collection count: {self.embedding_collection.get_face_count()}")
+            
+            if isinstance(embedding_list, list) and len(embedding_list) > 0:
+                embedding_list = [float(x) for x in embedding_list]
+                
+                logger.info(f"Final embedding length: {len(embedding_list)}")
+                logger.info(f"Embedding sample (first 5 values): {embedding_list[:5]}")
+                
+                # Check if we need to pad or truncate the embedding
+                if len(embedding_list) != 512:
+                    logger.warning(f"Embedding dimension mismatch: {len(embedding_list)} != 512")
+                    
+                    if len(embedding_list) < 512:
+                        padding = [0.0] * (512 - len(embedding_list))
+                        embedding_list.extend(padding)
+                        logger.info(f"Padded embedding to length 512")
+                    else:
+                        embedding_list = embedding_list[:512]
+                        logger.info(f"Truncated embedding to length 512")
+                
+                actual_threshold = max(0.01, threshold)
+                similar_faces = self.embedding_collection.query_faces_by_embedding(embedding_list, top_k, actual_threshold)
+                logger.info(f"Found {len(similar_faces)} similar faces with threshold={actual_threshold}")
+            else:
+                logger.error(f"Invalid embedding format: {type(embedding_list)}")
+                return []
         except Exception as e:
             logger.error(f"Error querying faces by embedding: {e}")
             return []
@@ -237,16 +311,30 @@ class HybridFaceDB(AbstractFaceDB):
         enriched_results = []
         for face in similar_faces:
             face_id = face.get('id')
+            mysql_id = face.get('metadata', {}).get('mysql_id', face_id)
+            
+            mysql_face = None
             if face_id:
                 mysql_face = self.relational_db.get_face_by_id(face_id)
-                if mysql_face:
-                    mysql_face['similarity'] = face.get('similarity', 0.0)
-                    enriched_results.append(mysql_face)
-                else:
-                    enriched_results.append(face)
+                
+            if not mysql_face and mysql_id and mysql_id != face_id:
+                mysql_face = self.relational_db.get_face_by_id(mysql_id)
+                
+            if mysql_face:
+                mysql_face['similarity'] = face.get('similarity', 0.0)
+                mysql_face['id'] = mysql_id  # Ensure we use the MySQL ID
+                enriched_results.append(mysql_face)
             else:
-                enriched_results.append(face)
+                face_copy = face.copy()
+                if mysql_id:
+                    face_copy['id'] = mysql_id  # Use the MySQL ID from metadata
+                enriched_results.append(face_copy)
         
+        enriched_results.sort(key=lambda x: x.get('similarity', 0.0), reverse=True)
+        
+        if threshold > 0:
+            enriched_results = [face for face in enriched_results if face.get('similarity', 0.0) >= threshold]
+            
         return enriched_results
     
     def get_all_faces(self) -> List[Dict[str, Any]]:

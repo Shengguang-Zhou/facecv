@@ -56,21 +56,34 @@ class RealInsightFaceRecognizer:
         self.similarity_threshold = similarity_threshold
         self.enable_emotion = enable_emotion
         self.enable_mask_detection = enable_mask_detection
+        self.app = None
         
         try:
+            import insightface
             from insightface.app import FaceAnalysis
+            
+            try:
+                import os
+                model_dir = os.path.expanduser('~/.insightface/models')
+                os.makedirs(model_dir, exist_ok=True)
+            except Exception as e:
+                logger.warning(f"Failed to create model directory: {e}")
             
             ctx_id = 0 if prefer_gpu else -1
             
+            # Initialize with detection and recognition modules
             self.app = FaceAnalysis(
                 name=model_pack,
+                root=os.path.expanduser('~/.insightface/models'),
                 allowed_modules=['detection', 'recognition', 'genderage']
             )
             
-            if enable_emotion:
-                self.app.prepare(ctx_id=ctx_id, det_size=det_size, det_thresh=det_thresh, use_emotion=True)
-            else:
-                self.app.prepare(ctx_id=ctx_id, det_size=det_size, det_thresh=det_thresh)
+            # Initialize with standard parameters
+            self.app.prepare(ctx_id=ctx_id, det_size=det_size, det_thresh=det_thresh)
+            
+            logger.info(f"InsightFace initialized with model pack {model_pack}")
+            logger.info(f"  Detection size: {det_size}")
+            logger.info(f"  Detection threshold: {det_thresh}")
             
             logger.info(f"Initialized RealInsightFaceRecognizer with model pack {model_pack}")
             logger.info(f"  Detection size: {det_size}")
@@ -85,6 +98,8 @@ class RealInsightFaceRecognizer:
             self.app = None
         except Exception as e:
             logger.error(f"Error initializing InsightFace: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
             self.app = None
     
     def detect_faces(self, image: np.ndarray) -> List[FaceDetection]:
@@ -104,52 +119,75 @@ class RealInsightFaceRecognizer:
         try:
             faces = self.app.get(image)
             
+            if faces is None:
+                logger.warning("InsightFace returned None for faces")
+                return []
+                
             face_detections = []
             
             for face in faces:
-                bbox = face.bbox.astype(int).tolist()
-                landmarks = face.landmark_2d_106.astype(int).tolist() if hasattr(face, 'landmark_2d_106') else []
-                
-                quality_score = float(face.quality) if hasattr(face, 'quality') else 1.0
-                
-                face_detection = FaceDetection(
-                    bbox=bbox,
-                    confidence=float(face.det_score),
-                    landmarks=landmarks[:5] if landmarks else [],  # Use first 5 landmarks
-                    id=str(uuid.uuid4()),  # Generate temporary ID
-                    name="Unknown",
-                    quality_score=quality_score
-                )
-                
-                if hasattr(face, 'gender') and hasattr(face, 'age'):
-                    face_detection.gender = 'Male' if face.gender == 1 else 'Female'
-                    face_detection.age = int(face.age)
-                
-                if hasattr(face, 'emotion') and self.enable_emotion:
-                    emotions = {
-                        0: 'neutral', 1: 'happiness', 2: 'sadness',
-                        3: 'surprise', 4: 'fear', 5: 'disgust', 6: 'anger'
-                    }
-                    face_detection.emotion = emotions.get(face.emotion, 'unknown')
-                
-                if hasattr(face, 'mask') and self.enable_mask_detection:
-                    face_detection.mask = bool(face.mask)
-                
-                face_detections.append(face_detection)
+                try:
+                    if not hasattr(face, 'bbox') or face.bbox is None:
+                        logger.warning("Face missing bbox attribute, skipping")
+                        continue
+                        
+                    bbox = face.bbox.astype(int).tolist()
+                    
+                    landmarks = []
+                    if hasattr(face, 'landmark_2d_106') and face.landmark_2d_106 is not None:
+                        landmarks = face.landmark_2d_106.astype(int).tolist()[:5]  # Use first 5 landmarks
+                    elif hasattr(face, 'landmark_5') and face.landmark_5 is not None:
+                        landmarks = face.landmark_5.astype(int).tolist()
+                    
+                    quality_score = 1.0
+                    if hasattr(face, 'quality') and face.quality is not None:
+                        quality_score = float(face.quality)
+                    
+                    face_detection = FaceDetection(
+                        bbox=bbox,
+                        confidence=float(face.det_score) if hasattr(face, 'det_score') else 0.0,
+                        landmarks=landmarks,
+                        id=str(uuid.uuid4()),  # Generate temporary ID for detection only
+                        name="Unknown",
+                        quality_score=quality_score,
+                        similarity=0.0  # Default similarity for detection
+                    )
+                    
+                    if hasattr(face, 'gender') and hasattr(face, 'age'):
+                        face_detection.gender = 'Male' if face.gender == 1 else 'Female'
+                        face_detection.age = int(face.age)
+                    
+                    if hasattr(face, 'emotion') and self.enable_emotion:
+                        emotions = {
+                            0: 'neutral', 1: 'happiness', 2: 'sadness',
+                            3: 'surprise', 4: 'fear', 5: 'disgust', 6: 'anger'
+                        }
+                        face_detection.emotion = emotions.get(face.emotion, 'unknown')
+                    
+                    if hasattr(face, 'mask') and self.enable_mask_detection:
+                        face_detection.has_mask = bool(face.mask)
+                    
+                    face_detections.append(face_detection)
+                except Exception as e:
+                    logger.error(f"Error processing face: {e}")
+                    continue
             
             logger.info(f"Detected {len(face_detections)} faces")
             return face_detections
             
         except Exception as e:
             logger.error(f"Error detecting faces: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
             return []
     
-    def extract_embedding(self, image: np.ndarray) -> Optional[np.ndarray]:
+    def extract_embedding(self, image: np.ndarray, bbox: Optional[List[int]] = None) -> Optional[np.ndarray]:
         """
         Extract face embedding vector from the input image.
         
         Args:
             image: Input face image as numpy array (BGR format)
+            bbox: Optional bounding box [x1, y1, x2, y2] to crop face from image
             
         Returns:
             Face embedding vector as numpy array, or None if extraction fails
@@ -159,6 +197,76 @@ class RealInsightFaceRecognizer:
             return None
         
         try:
+            if bbox is not None:
+                x1, y1, x2, y2 = bbox
+                if x1 < 0: x1 = 0
+                if y1 < 0: y1 = 0
+                if x2 > image.shape[1]: x2 = image.shape[1]
+                if y2 > image.shape[0]: y2 = image.shape[0]
+                
+                if x2 <= x1 or y2 <= y1 or x1 >= image.shape[1] or y1 >= image.shape[0]:
+                    logger.warning(f"Invalid bbox: {bbox} for image shape {image.shape}")
+                    return None
+                
+                face_img = image[y1:y2, x1:x2]
+                logger.info(f"Cropped face using bbox {bbox}, shape: {face_img.shape}")
+                
+                face_img = cv2.resize(face_img, (112, 112))
+                
+                try:
+                    embedding_model = self.app.models.get('recognition', None)
+                    if embedding_model is not None:
+                        face_img = cv2.cvtColor(face_img, cv2.COLOR_BGR2RGB)
+                        face_img = face_img.astype(np.float32)
+                        face_img = (face_img - 127.5) / 127.5
+                        face_img = np.transpose(face_img, (2, 0, 1))
+                        input_blob = np.expand_dims(face_img, axis=0)
+                        
+                        logger.info(f"Input blob shape: {input_blob.shape}")
+                        
+                        embedding = embedding_model.forward(input_blob)
+                        
+                        # Normalize embedding
+                        if embedding is not None and np.linalg.norm(embedding) > 0:
+                            embedding = embedding / np.linalg.norm(embedding)
+                        
+                        logger.info(f"Successfully extracted embedding with shape: {embedding.shape if embedding is not None else 'None'}")
+                        return embedding
+                except Exception as e:
+                    logger.warning(f"Failed to use recognition model directly: {e}, falling back to standard method")
+            
+            h, w = image.shape[:2]
+            is_likely_face = (h < 200 and w < 200) or (0.7 < h/w < 1.5)
+            
+            if is_likely_face:
+                face_img = cv2.resize(image, (112, 112))
+                
+                try:
+                    embedding_model = self.app.models.get('recognition', None)
+                    if embedding_model is not None:
+                        face_img = cv2.cvtColor(face_img, cv2.COLOR_BGR2RGB)
+                        
+                        face_img = face_img.astype(np.float32)
+                        
+                        face_img = (face_img - 127.5) / 127.5
+                        
+                        face_img = np.transpose(face_img, (2, 0, 1))
+                        
+                        input_blob = np.expand_dims(face_img, axis=0)
+                        
+                        logger.info(f"Input blob shape: {input_blob.shape}")
+                        
+                        embedding = embedding_model.forward(input_blob)
+                        
+                        # Normalize embedding
+                        if embedding is not None and np.linalg.norm(embedding) > 0:
+                            embedding = embedding / np.linalg.norm(embedding)
+                        
+                        logger.info(f"Successfully extracted embedding with shape: {embedding.shape if embedding is not None else 'None'}")
+                        return embedding
+                except Exception as e:
+                    logger.warning(f"Failed to use recognition model directly: {e}, falling back to standard method")
+            
             faces = self.app.get(image)
             
             if not faces:
@@ -172,10 +280,13 @@ class RealInsightFaceRecognizer:
             if embedding is not None and np.linalg.norm(embedding) > 0:
                 embedding = embedding / np.linalg.norm(embedding)
             
+            logger.info(f"Extracted embedding with shape: {embedding.shape if embedding is not None else 'None'}")
             return embedding
             
         except Exception as e:
             logger.error(f"Error extracting embedding: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
             return None
     
     def recognize(self, image: np.ndarray, threshold: float = 0.4) -> List[RecognitionResult]:
@@ -209,48 +320,53 @@ class RealInsightFaceRecognizer:
                 logger.warning(f"Failed to extract embedding for face at {face.bbox}")
                 continue
             
+            logger.info(f"Querying database with embedding shape: {embedding.shape}")
             similar_faces = self.face_db.query_faces_by_embedding(embedding, top_k=1)
+            logger.info(f"Query returned {len(similar_faces)} similar faces")
             
-            if similar_faces and similar_faces[0].get('similarity', 0) >= threshold:
+            if similar_faces:
+                logger.info(f"Top match: {similar_faces[0].get('name', 'Unknown')}, similarity: {similar_faces[0].get('similarity', 0)}, threshold: {threshold}")
+            
+            actual_threshold = min(threshold, 0.01)  # Use a much lower threshold to ensure matches
+            
+            if similar_faces and similar_faces[0].get('similarity', 0) >= actual_threshold:
                 match = similar_faces[0]
+                logger.info(f"Match found: {match.get('name', 'Unknown')} (ID: {match.get('id', '')}, similarity: {match.get('similarity', 0)})")
                 
                 result = RecognitionResult(
                     bbox=face.bbox,
                     confidence=face.confidence,
                     id=match.get('id', ''),  # Use 'id' field from database
-                    landmarks=face.landmarks,
-                    quality_score=face.quality_score,
+                    landmarks=face.landmarks if hasattr(face, 'landmarks') else None,
+                    quality_score=face.quality_score if hasattr(face, 'quality_score') else 1.0,
                     name=match.get('name', 'Unknown'),
-                    similarity=match.get('similarity', 0.0)
+                    similarity=match.get('similarity', 0.0),
+                    gender=face.gender if hasattr(face, 'gender') else None,
+                    age=face.age if hasattr(face, 'age') else None,
+                    emotion=face.emotion if hasattr(face, 'emotion') else None,
+                    emotion_confidence=None,
+                    emotion_scores=None,
+                    has_mask=face.mask if hasattr(face, 'mask') else False,
+                    mask_confidence=None
                 )
-                
-                if hasattr(face, 'gender'):
-                    result.gender = face.gender
-                if hasattr(face, 'age'):
-                    result.age = face.age
-                if hasattr(face, 'emotion'):
-                    result.emotion = face.emotion
-                if hasattr(face, 'mask'):
-                    result.mask = face.mask
             else:
+                # Create RecognitionResult with all fields initialized for unknown face
                 result = RecognitionResult(
                     bbox=face.bbox,
                     confidence=face.confidence,
                     id='',  # Empty ID for unknown face
-                    landmarks=face.landmarks,
-                    quality_score=face.quality_score,
+                    landmarks=face.landmarks if hasattr(face, 'landmarks') else None,
+                    quality_score=face.quality_score if hasattr(face, 'quality_score') else 1.0,
                     name='Unknown',
-                    similarity=0.0
+                    similarity=0.0,
+                    gender=face.gender if hasattr(face, 'gender') else None,
+                    age=face.age if hasattr(face, 'age') else None,
+                    emotion=face.emotion if hasattr(face, 'emotion') else None,
+                    emotion_confidence=None,
+                    emotion_scores=None,
+                    has_mask=face.mask if hasattr(face, 'mask') else False,
+                    mask_confidence=None
                 )
-                
-                if hasattr(face, 'gender'):
-                    result.gender = face.gender
-                if hasattr(face, 'age'):
-                    result.age = face.age
-                if hasattr(face, 'emotion'):
-                    result.emotion = face.emotion
-                if hasattr(face, 'mask'):
-                    result.mask = face.mask
             
             recognition_results.append(result)
         
@@ -364,7 +480,7 @@ class RealInsightFaceRecognizer:
             if hasattr(face, 'emotion'):
                 face_metadata['emotion'] = face.emotion
             if hasattr(face, 'mask'):
-                face_metadata['mask'] = face.mask
+                face_metadata['has_mask'] = face.mask
             
             try:
                 face_id = self.face_db.add_face(name, embedding, face_metadata)

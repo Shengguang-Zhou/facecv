@@ -42,10 +42,20 @@ class RecognitionResult(BaseModel):
     name: str = Field(..., description="识别到的姓名")
     confidence: float = Field(..., ge=0, le=1, description="相似度分数")
     bbox: List[int] = Field(..., description="人脸边界框 [x1, y1, x2, y2]")
-    face_id: Optional[str] = Field(None, description="人脸 ID")
+    id: Optional[str] = Field(None, description="人脸 ID (MySQL UUID)")
     detection_score: Optional[float] = Field(None, ge=0, le=1, description="检测置信度")
     metadata: Optional[Dict[str, Any]] = Field(None, description="附加元数据（年龄、性别等）")
     embedding: Optional[List[float]] = Field(None, description="人脸特征向量")
+    quality_score: Optional[float] = Field(None, description="人脸质量分数")
+    similarity: Optional[float] = Field(0.0, description="相似度分数")
+    landmarks: Optional[List[List[float]]] = Field(None, description="关键点坐标")
+    age: Optional[int] = Field(None, description="年龄估计")
+    gender: Optional[str] = Field(None, description="性别（Male/Female）")
+    emotion: Optional[str] = Field(None, description="情绪（happy/sad/angry/neutral等）")
+    emotion_confidence: Optional[float] = Field(None, description="情绪识别置信度")
+    emotion_scores: Optional[Dict[str, float]] = Field(None, description="所有情绪的概率分数")
+    has_mask: Optional[bool] = Field(None, description="是否戴口罩")
+    mask_confidence: Optional[float] = Field(None, description="口罩检测置信度")
     
     
 class VerificationResult(BaseModel):
@@ -167,12 +177,14 @@ class FaceDetection(BaseModel):
     """人脸检测结果"""
     bbox: List[int] = Field(..., description="边界框 [x1, y1, x2, y2]")
     confidence: float = Field(..., description="检测置信度")
-    face_id: str = Field(..., description="人脸ID")
+    id: str = Field(..., description="人脸ID (MySQL UUID)")
     landmarks: Optional[List[List[float]]] = Field(None, description="关键点坐标")
     age: Optional[int] = Field(None, description="年龄估计")
     gender: Optional[str] = Field(None, description="性别（Male/Female）")
     embedding: Optional[List[float]] = Field(None, description="人脸特征向量")
     quality_score: Optional[float] = Field(None, description="人脸质量分数")
+    name: Optional[str] = Field("Unknown", description="识别到的人员姓名")
+    similarity: Optional[float] = Field(0.0, description="相似度分数")
     # Emotion recognition fields
     emotion: Optional[str] = Field(None, description="情绪（happy/sad/angry/neutral等）")
     emotion_confidence: Optional[float] = Field(None, description="情绪识别置信度")
