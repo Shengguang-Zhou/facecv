@@ -46,7 +46,7 @@ def get_deepface_components():
     """获取DeepFace组件实例（延迟加载）"""
     global deepface_recognizer, face_embedding, face_verification, face_analysis, face_detection
     
-    if deepface_recognizer is None:
+    if deepface_recognizer is None or face_embedding is None or face_verification is None or face_analysis is None or face_detection is None:
         try:
             from facecv.models.deepface.recognizer import DeepFaceRecognizer
             import facecv.models.deepface.face_embedding as fe
@@ -59,12 +59,26 @@ def get_deepface_components():
             face_verification = fv
             face_analysis = fa
             face_detection = fd
+            
+            if not hasattr(face_verification, 'face_verification'):
+                raise ImportError("face_verification模块缺少face_verification方法")
+            if not hasattr(face_analysis, 'face_analysis'):
+                raise ImportError("face_analysis模块缺少face_analysis方法")
+            if not hasattr(face_detection, 'face_detection'):
+                raise ImportError("face_detection模块缺少face_detection方法")
+                
             logger.info("DeepFace组件初始化成功")
         except ImportError as e:
             logger.error(f"DeepFace组件初始化失败: {e}")
             raise HTTPException(
                 status_code=503, 
                 detail=f"DeepFace服务不可用，请确保已安装相关依赖: {str(e)}"
+            )
+        except Exception as e:
+            logger.error(f"DeepFace组件初始化异常: {e}")
+            raise HTTPException(
+                status_code=503, 
+                detail=f"DeepFace服务初始化失败: {str(e)}"
             )
     
     return deepface_recognizer, face_embedding, face_verification, face_analysis, face_detection
@@ -522,7 +536,18 @@ async def verify_faces(
         
     except Exception as e:
         logger.error(f"人脸验证异常: {e}")
-        raise HTTPException(status_code=500, detail=f"服务器内部错误: {str(e)}")
+        return JSONResponse(
+            status_code=400,
+            content={
+                "success": False,
+                "error": f"人脸验证失败: {str(e)}",
+                "verified": False,
+                "confidence": 0.0,
+                "distance": 1.0,
+                "threshold": threshold,
+                "model": model_name
+            }
+        )
 
 
 @router.post("/analyze", response_model=FaceAnalysisResponse, summary="人脸属性分析")
@@ -589,6 +614,15 @@ async def analyze_face(
         
     except Exception as e:
         logger.error(f"人脸分析异常: {e}")
+        return JSONResponse(
+            status_code=400,
+            content={
+                "success": False,
+                "error": f"人脸分析失败: {str(e)}",
+                "faces": [],
+                "total_faces": 0
+            }
+        )
 @router.post("/detect/", summary="人脸检测")
 async def detect_faces(
     file: UploadFile = File(..., description="待检测的人脸图片文件"),
@@ -666,10 +700,16 @@ async def detect_faces(
         
     except Exception as e:
         logger.error(f"人脸检测异常: {e}")
-        raise HTTPException(status_code=500, detail=f"服务器内部错误: {str(e)}")
-
-
-        raise HTTPException(status_code=500, detail=f"服务器内部错误: {str(e)}")
+        return JSONResponse(
+            status_code=400,
+            content={
+                "success": False,
+                "error": f"人脸检测失败: {str(e)}",
+                "faces": [],
+                "total_faces": 0,
+                "processing_time": 0.0
+            }
+        )
 
 
 # ==================== 视频处理API ====================
