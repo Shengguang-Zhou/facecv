@@ -634,9 +634,12 @@ async def analyze_face(
         processing_time = time.time() - start_time
         logger.info(f"人脸分析完成，处理时间: {processing_time:.2f}秒，检测到 {len(serializable_results)} 个人脸")
         
-        return FaceAnalysisResponse(
-            faces=serializable_results,
-            total_faces=len(serializable_results)
+        return JSONResponse(
+            status_code=200,
+            content={
+                "faces": serializable_results,
+                "total_faces": len(serializable_results)
+            }
         )
         
     except Exception as e:
