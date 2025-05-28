@@ -7,6 +7,7 @@ FaceCV DeepFace API路由
 
 import io
 import base64
+import time
 import asyncio
 import logging
 from typing import List, Dict, Any, Optional, Union
@@ -599,6 +600,7 @@ async def analyze_face(
         action_list = [action.strip() for action in actions.split(",")]
         
         # 执行分析
+        start_time = time.time()
         results = await analysis.face_analysis(
             img_path=image_array,
             actions=action_list,
@@ -607,9 +609,34 @@ async def analyze_face(
             align=True
         )
         
+        def convert_numpy_types(obj):
+            """将numpy类型转换为Python原生类型，以便JSON序列化"""
+            if isinstance(obj, np.integer):
+                return int(obj)
+            elif isinstance(obj, np.floating):
+                return float(obj)
+            elif isinstance(obj, np.bool_):
+                return bool(obj)
+            elif isinstance(obj, np.ndarray):
+                return convert_numpy_types(obj.tolist())
+            elif isinstance(obj, list):
+                return [convert_numpy_types(item) for item in obj]
+            elif isinstance(obj, dict):
+                return {key: convert_numpy_types(value) for key, value in obj.items()}
+            else:
+                return obj
+        
+        serializable_results = convert_numpy_types(results)
+        
+        if not isinstance(serializable_results, list):
+            serializable_results = [serializable_results] if serializable_results else []
+        
+        processing_time = time.time() - start_time
+        logger.info(f"人脸分析完成，处理时间: {processing_time:.2f}秒，检测到 {len(serializable_results)} 个人脸")
+        
         return FaceAnalysisResponse(
-            faces=results,
-            total_faces=len(results)
+            faces=serializable_results,
+            total_faces=len(serializable_results)
         )
         
     except Exception as e:
