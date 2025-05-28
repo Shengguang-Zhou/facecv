@@ -5,8 +5,12 @@ import logging
 import numpy as np
 from typing import Dict, Any, Optional, Union, List
 import asyncio
+import traceback
 
-from deepface import DeepFace
+try:
+    from deepface import DeepFace
+except ImportError:
+    raise ImportError("DeepFace库未安装，请先安装: pip install deepface")
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -17,6 +21,8 @@ def convert_numpy_types(obj):
         return int(obj)
     elif isinstance(obj, np.floating):
         return float(obj)
+    elif isinstance(obj, np.bool_):
+        return bool(obj)
     elif isinstance(obj, np.ndarray):
         return convert_numpy_types(obj.tolist())
     elif isinstance(obj, list):
@@ -55,19 +61,24 @@ async def face_analysis(
     
     os.environ["CUDA_VISIBLE_DEVICES"] = "0" if use_cuda else "-1"
     
-    loop = asyncio.get_event_loop()
-    result = await loop.run_in_executor(
-        None, 
-        lambda: _face_analysis_sync(
-            img_path, 
-            actions, 
-            detector_backend, 
-            enforce_detection, 
-            align, 
-            silent
+    try:
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(
+            None, 
+            lambda: _face_analysis_sync(
+                img_path, 
+                actions, 
+                detector_backend, 
+                enforce_detection, 
+                align, 
+                silent
+            )
         )
-    )
-    return result
+        return result
+    except Exception as e:
+        logger.error(f"异步人脸分析失败: {e}")
+        logger.error(traceback.format_exc())
+        return []
 
 def _face_analysis_sync(
     img_path: Union[str, np.ndarray],
@@ -92,6 +103,11 @@ def _face_analysis_sync(
         分析结果列表，每个元素是一个包含分析结果的字典
     """
     try:
+        logger.info(f"开始分析人脸，actions={actions}, detector={detector_backend}")
+        
+        if isinstance(actions, str):
+            actions = [action.strip() for action in actions.split(",")]
+            
         result = DeepFace.analyze(
             img_path=img_path,
             actions=actions,
@@ -101,14 +117,22 @@ def _face_analysis_sync(
             silent=silent
         )
         
+        logger.info(f"分析完成，结果类型: {type(result)}")
+        
         if not isinstance(result, list):
             result = [result]
-            
+        
         converted_result = convert_numpy_types(result)
+        
         if not isinstance(converted_result, list):
             converted_result = [converted_result]
+            
+        converted_result = [item for item in converted_result if isinstance(item, dict)]
+        
+        logger.info(f"转换后的结果数量: {len(converted_result)}")
         return converted_result
         
     except Exception as e:
         logger.error(f"人脸分析失败: {e}")
+        logger.error(traceback.format_exc())
         return []
