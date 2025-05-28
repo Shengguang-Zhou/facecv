@@ -402,11 +402,11 @@ async def get_face_by_name(name: str):
         
         faces = []
         for face in faces_data:
-            metadata = face.get("metadata", {})
+            metadata = face.get("metadata", {}) if face else {}
             faces.append({
-                "face_id": face.get("id"),
-                "person_name": face.get("name", name),
-                "created_at": metadata.get("created_at"),
+                "face_id": face.get("id") if face else None,
+                "person_name": face.get("name", name) if face else name,
+                "created_at": metadata.get("created_at") if metadata else None,
                 "metadata": metadata
             })
         
