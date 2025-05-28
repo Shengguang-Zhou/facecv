@@ -2,6 +2,7 @@
 
 from typing import List, Union, Optional, Dict, Any
 from datetime import datetime
+import numpy as np
 from pydantic import BaseModel, Field
 
 
@@ -143,6 +144,40 @@ class FaceAnalysisResponse(BaseModel):
     """人脸分析响应"""
     faces: List[Dict[str, Any]] = Field(..., description="分析结果列表")
     total_faces: int = Field(..., description="检测到的人脸总数")
+    
+    class Config:
+        """配置类"""
+        json_encoders = {
+            np.integer: lambda x: int(x),
+            np.floating: lambda x: float(x),
+            np.ndarray: lambda x: x.tolist(),
+            np.bool_: lambda x: bool(x)
+        }
+        
+    @classmethod
+    def model_validate(cls, obj, *args, **kwargs):
+        """自定义验证方法，确保numpy类型被正确转换"""
+        if isinstance(obj, dict):
+            obj = cls._convert_numpy_types(obj)
+        return super().model_validate(obj, *args, **kwargs)
+    
+    @staticmethod
+    def _convert_numpy_types(obj):
+        """将numpy类型转换为Python原生类型，以便JSON序列化"""
+        if isinstance(obj, np.integer):
+            return int(obj)
+        elif isinstance(obj, np.floating):
+            return float(obj)
+        elif isinstance(obj, np.bool_):
+            return bool(obj)
+        elif isinstance(obj, np.ndarray):
+            return FaceAnalysisResponse._convert_numpy_types(obj.tolist())
+        elif isinstance(obj, list):
+            return [FaceAnalysisResponse._convert_numpy_types(item) for item in obj]
+        elif isinstance(obj, dict):
+            return {key: FaceAnalysisResponse._convert_numpy_types(value) for key, value in obj.items()}
+        else:
+            return obj
 
 
 class FaceListResponse(BaseModel):
