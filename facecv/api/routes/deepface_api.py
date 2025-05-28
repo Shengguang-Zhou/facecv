@@ -611,7 +611,9 @@ async def analyze_face(
         
         def convert_numpy_types(obj):
             """将numpy类型转换为Python原生类型，以便JSON序列化"""
-            if isinstance(obj, np.integer):
+            if obj is None:
+                return None
+            elif isinstance(obj, np.integer):
                 return int(obj)
             elif isinstance(obj, np.floating):
                 return float(obj)
@@ -619,10 +621,16 @@ async def analyze_face(
                 return bool(obj)
             elif isinstance(obj, np.ndarray):
                 return convert_numpy_types(obj.tolist())
-            elif isinstance(obj, list):
+            elif isinstance(obj, (list, tuple)):
                 return [convert_numpy_types(item) for item in obj]
             elif isinstance(obj, dict):
-                return {key: convert_numpy_types(value) for key, value in obj.items()}
+                return {str(key) if not isinstance(key, (str, int, float, bool)) else key: 
+                        convert_numpy_types(value) for key, value in obj.items()}
+            elif hasattr(obj, 'item') and callable(obj.item):
+                try:
+                    return obj.item()
+                except:
+                    return str(obj)
             else:
                 return obj
         
