@@ -43,7 +43,7 @@ jobs:
       - name: Install minimal dependencies
         run: |
           pip install --upgrade pip
-          pip install fastapi uvicorn pydantic httpx pytest pytest-asyncio
+          pip install fastapi uvicorn pydantic pydantic-settings httpx pytest pytest-asyncio
           pip install numpy opencv-python-headless pillow python-dotenv psutil pynvml pyyaml
       - name: Test basic API structure
         run: |
@@ -66,7 +66,7 @@ jobs:
       - name: Install CV dependencies
         run: |
           pip install --upgrade pip
-          pip install fastapi uvicorn httpx pytest pytest-asyncio
+          pip install fastapi uvicorn pydantic pydantic-settings httpx pytest pytest-asyncio
           pip install numpy opencv-python pillow python-dotenv pyyaml
           pip install onnxruntime insightface
           pip install pynvml psutil
