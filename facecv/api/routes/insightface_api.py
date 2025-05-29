@@ -1060,20 +1060,22 @@ async def process_stream_with_webhook(
 ):
     """Background task to process video stream and send results to webhook"""
     try:
-        # Configure webhook
-        webhook_config = WebhookConfig(
-            url=webhook_url,
-            timeout=30,
-            retry_count=3,
-            retry_delay=1,
-            batch_size=10,
-            batch_timeout=1.0
-        )
-        webhook_manager.add_webhook(stream_id, webhook_config)
-        
-        # Start webhook manager if not running
-        if not webhook_manager.running:
-            webhook_manager.start()
+        # Configure webhook only if URL is provided
+        has_webhook = webhook_url and webhook_url.strip()
+        if has_webhook:
+            webhook_config = WebhookConfig(
+                url=webhook_url,
+                timeout=30,
+                retry_count=3,
+                retry_delay=1,
+                batch_size=10,
+                batch_timeout=1.0
+            )
+            webhook_manager.add_webhook(stream_id, webhook_config)
+            
+            # Start webhook manager if not running
+            if not webhook_manager.running:
+                webhook_manager.start()
         
         # Configure stream processor
         config = StreamConfig(
@@ -1140,17 +1142,18 @@ async def process_stream_with_webhook(
                         _, buffer = cv2.imencode('.jpg', frame)
                         frame_base64 = base64.b64encode(buffer).decode('utf-8')
                     
-                    # Send to webhook
-                    send_recognition_event(
-                        camera_id=str(source),
-                        recognized_faces=faces_data,
-                        metadata={
-                            "stream_id": stream_id,
-                            "frame_count": frame_count,
-                            "timestamp": datetime.now().isoformat(),
-                            "frame_base64": frame_base64
-                        }
-                    )
+                    # Send to webhook if configured
+                    if has_webhook:
+                        send_recognition_event(
+                            camera_id=str(source),
+                            recognized_faces=faces_data,
+                            metadata={
+                                "stream_id": stream_id,
+                                "frame_count": frame_count,
+                                "timestamp": datetime.now().isoformat(),
+                                "frame_base64": frame_base64
+                            }
+                        )
                     
             elif event_type == "face_verified":
                 # Verification mode
@@ -1200,24 +1203,26 @@ async def process_stream_with_webhook(
                         _, buffer = cv2.imencode('.jpg', frame)
                         frame_base64 = base64.b64encode(buffer).decode('utf-8')
                     
-                    send_recognition_event(
-                        camera_id=str(source),
-                        recognized_faces=faces_data,
-                        metadata={
-                            "stream_id": stream_id,
-                            "event_type": "face_verified",
-                            "target_name": target_name,
-                            "frame_count": frame_count,
-                            "timestamp": datetime.now().isoformat(),
-                            "frame_base64": frame_base64
-                        }
-                    )
+                    if has_webhook:
+                        send_recognition_event(
+                            camera_id=str(source),
+                            recognized_faces=faces_data,
+                            metadata={
+                                "stream_id": stream_id,
+                                "event_type": "face_verified",
+                                "target_name": target_name,
+                                "frame_count": frame_count,
+                                "timestamp": datetime.now().isoformat(),
+                                "frame_base64": frame_base64
+                            }
+                        )
             
             frame_count += 1
         
         # Cleanup
         cap.release()
-        webhook_manager.remove_webhook(stream_id)
+        if has_webhook:
+            webhook_manager.remove_webhook(stream_id)
         if stream_id in _active_streams:
             _active_streams[stream_id]["status"] = "completed"
             del _active_streams[stream_id]
@@ -1227,7 +1232,8 @@ async def process_stream_with_webhook(
         if stream_id in _active_streams:
             _active_streams[stream_id]["status"] = "error"
             del _active_streams[stream_id]
-        webhook_manager.remove_webhook(stream_id)
+        if has_webhook:
+            webhook_manager.remove_webhook(stream_id)
 
 
 @router.post(
@@ -1461,8 +1467,9 @@ async def stop_stream(stream_id: str):
         # Remove from active streams
         del _active_streams[stream_id]
         
-        # Remove webhook
-        webhook_manager.remove_webhook(stream_id)
+        # Remove webhook if exists
+        if stream_id in webhook_manager.webhooks:
+            webhook_manager.remove_webhook(stream_id)
         
         return {
             "stream_id": stream_id,

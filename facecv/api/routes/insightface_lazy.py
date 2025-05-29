@@ -508,20 +508,22 @@ async def process_stream_with_webhook(
 ):
     """Background task to process video stream and send results to webhook"""
     try:
-        # Configure webhook
-        webhook_config = WebhookConfig(
-            url=webhook_url,
-            timeout=30,
-            retry_count=3,
-            retry_delay=1,
-            batch_size=10,
-            batch_timeout=1.0
-        )
-        webhook_manager.add_webhook(stream_id, webhook_config)
-        
-        # Start webhook manager if not running
-        if not webhook_manager.running:
-            webhook_manager.start()
+        # Configure webhook only if URL is provided
+        has_webhook = webhook_url and webhook_url.strip()
+        if has_webhook:
+            webhook_config = WebhookConfig(
+                url=webhook_url,
+                timeout=30,
+                retry_count=3,
+                retry_delay=1,
+                batch_size=10,
+                batch_timeout=1.0
+            )
+            webhook_manager.add_webhook(stream_id, webhook_config)
+            
+            # Start webhook manager if not running
+            if not webhook_manager.running:
+                webhook_manager.start()
         
         # Configure stream processor
         config = StreamConfig(
@@ -537,14 +539,15 @@ async def process_stream_with_webhook(
         if not cap.isOpened():
             error_msg = f"Cannot open video source: {source}"
             logger.error(error_msg)
-            # Send error to webhook
-            webhook_manager.send_event(stream_id, {
-                "stream_id": stream_id,
-                "event_type": "error",
-                "error": error_msg,
-                "camera_id": str(source),
-                "timestamp": datetime.now().isoformat()
-            })
+            # Send error to webhook if configured
+            if has_webhook:
+                webhook_manager.send_event(stream_id, {
+                    "stream_id": stream_id,
+                    "event_type": "error",
+                    "error": error_msg,
+                    "camera_id": str(source),
+                    "timestamp": datetime.now().isoformat()
+                })
             # Update stream status
             if stream_id in _active_streams:
                 _active_streams[stream_id]["status"] = "error"
@@ -569,14 +572,15 @@ async def process_stream_with_webhook(
             error_msg = f"Camera {source} opened but cannot read frames. Please check camera permissions or try unplugging and replugging the camera."
             logger.error(error_msg)
             cap.release()
-            # Send error to webhook
-            webhook_manager.send_event(stream_id, {
-                "stream_id": stream_id,
-                "event_type": "error",
-                "error": error_msg,
-                "camera_id": str(source),
-                "timestamp": datetime.now().isoformat()
-            })
+            # Send error to webhook if configured
+            if has_webhook:
+                webhook_manager.send_event(stream_id, {
+                    "stream_id": stream_id,
+                    "event_type": "error",
+                    "error": error_msg,
+                    "camera_id": str(source),
+                    "timestamp": datetime.now().isoformat()
+                })
             # Update stream status
             if stream_id in _active_streams:
                 _active_streams[stream_id]["status"] = "error"
@@ -601,13 +605,14 @@ async def process_stream_with_webhook(
                 if consecutive_failures >= max_consecutive_failures:
                     error_msg = f"Failed to read {max_consecutive_failures} consecutive frames from camera {source}"
                     logger.error(error_msg)
-                    webhook_manager.send_event(stream_id, {
-                        "stream_id": stream_id,
-                        "event_type": "error",
-                        "error": error_msg,
-                        "camera_id": str(source),
-                        "timestamp": datetime.now().isoformat()
-                    })
+                    if has_webhook:
+                        webhook_manager.send_event(stream_id, {
+                            "stream_id": stream_id,
+                            "event_type": "error",
+                            "error": error_msg,
+                            "camera_id": str(source),
+                            "timestamp": datetime.now().isoformat()
+                        })
                     break
                 time.sleep(0.1)  # Wait a bit before retrying
                 continue
@@ -653,17 +658,17 @@ async def process_stream_with_webhook(
                         _, buffer = cv2.imencode('.jpg', frame)
                         frame_base64 = base64.b64encode(buffer).decode('utf-8')
                     
-                    # Send to webhook
-                    send_recognition_event(
-                        camera_id=str(source),
-                        recognized_faces=faces_data,
-                        metadata={
+                    # Send to webhook if configured
+                    if has_webhook:
+                        webhook_manager.send_event(stream_id, {
                             "stream_id": stream_id,
+                            "event_type": event_type,
+                            "camera_id": str(source),
+                            "faces": faces_data,
                             "frame_count": frame_count,
                             "timestamp": datetime.now().isoformat(),
                             "frame_base64": frame_base64
-                        }
-                    )
+                        })
                     
             elif event_type == "face_verified":
                 # Verification mode
@@ -713,24 +718,24 @@ async def process_stream_with_webhook(
                         _, buffer = cv2.imencode('.jpg', frame)
                         frame_base64 = base64.b64encode(buffer).decode('utf-8')
                     
-                    send_recognition_event(
-                        camera_id=str(source),
-                        recognized_faces=faces_data,
-                        metadata={
+                    if has_webhook:
+                        webhook_manager.send_event(stream_id, {
                             "stream_id": stream_id,
-                            "event_type": "face_verified",
+                            "event_type": event_type,
+                            "camera_id": str(source),
+                            "faces": faces_data,
                             "target_name": target_name,
                             "frame_count": frame_count,
                             "timestamp": datetime.now().isoformat(),
                             "frame_base64": frame_base64
-                        }
-                    )
+                        })
             
             frame_count += 1
         
         # Cleanup
         cap.release()
-        webhook_manager.remove_webhook(stream_id)
+        if has_webhook:
+            webhook_manager.remove_webhook(stream_id)
         if stream_id in _active_streams:
             _active_streams[stream_id]["status"] = "completed"
             del _active_streams[stream_id]
@@ -740,7 +745,8 @@ async def process_stream_with_webhook(
         if stream_id in _active_streams:
             _active_streams[stream_id]["status"] = "error"
             del _active_streams[stream_id]
-        webhook_manager.remove_webhook(stream_id)
+        if has_webhook:
+            webhook_manager.remove_webhook(stream_id)
 
 
 @router.get(
@@ -752,7 +758,7 @@ async def process_stream_with_webhook(
 async def process_stream_recognition(
     background_tasks: BackgroundTasks,
     camera_id: Union[int, str] = Query(..., description="摄像头索引(0,1,2...)或RTSP URL"),
-    webhook_url: str = Query(..., description="接收识别结果的Webhook URL"),
+    webhook_url: str = Query("", description="接收识别结果的Webhook URL (可选)"),
     skip_frames: int = Query(1, description="跳帧数，1=每帧处理，2=隔帧处理"),
     model: str = Query("buffalo_l", description="使用的模型(默认buffalo_l)"),
     use_scrfd: bool = Query(True, description="是否使用SCRFD检测器"),
@@ -855,7 +861,7 @@ async def process_stream_recognition(
 async def process_stream_verification(
     background_tasks: BackgroundTasks,
     camera_id: Union[int, str] = Query(..., description="摄像头索引(0,1,2...)或RTSP URL"),
-    webhook_url: str = Query(..., description="接收验证结果的Webhook URL"),
+    webhook_url: str = Query("", description="接收验证结果的Webhook URL (可选)"),
     target_name: str = Query(..., description="目标人员姓名"),
     verification_threshold: float = Query(0.4, description="验证阈值"),
     alert_on_mismatch: bool = Query(False, description="不匹配时是否发送警报"),
@@ -997,8 +1003,9 @@ async def stop_stream(stream_id: str):
         # Remove from active streams
         del _active_streams[stream_id]
         
-        # Remove webhook
-        webhook_manager.remove_webhook(stream_id)
+        # Remove webhook if exists
+        if stream_id in webhook_manager.webhooks:
+            webhook_manager.remove_webhook(stream_id)
         
         return {
             "stream_id": stream_id,
