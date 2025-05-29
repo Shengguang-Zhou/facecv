@@ -1,42 +1,43 @@
 """InsightFace API Routes with Lazy Model Loading"""
 
-from fastapi import (
-    APIRouter,
-    File,
-    UploadFile,
-    HTTPException,
-    Form,
-    Query,
-    BackgroundTasks,
-    Depends,
-)
-from typing import List, Optional, Union, Dict, Any
-from enum import Enum
-import numpy as np
-from PIL import Image
-import io
-import logging
-import cv2
-import uuid
-from datetime import datetime
 import asyncio
 import base64
+import io
+import logging
 import threading
 import time
+import uuid
+from datetime import datetime
+from enum import Enum
+from typing import Any, Dict, List, Optional, Union
 
+import cv2
+import numpy as np
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    Query,
+    UploadFile,
+)
+from PIL import Image
+
+from facecv.config import get_settings
+from facecv.config.runtime_config import get_runtime_config
+
+# Webhook functionality removed
+from facecv.core.video_stream import StreamConfig, VideoStreamProcessor
+from facecv.database.factory import get_default_database
 from facecv.models.lazy_model_pool import lazy_model_pool as model_pool
 from facecv.schemas.face import (
     FaceDetection,
-    VerificationResult,
-    RecognitionResult,
     FaceRegisterResponse,
+    RecognitionResult,
+    VerificationResult,
 )
-from facecv.config import get_settings
-from facecv.config.runtime_config import get_runtime_config
-from facecv.database.factory import get_default_database
-
-# Webhook functionality removed
-from facecv.core.video_stream import VideoStreamProcessor, StreamConfig
 
 router = APIRouter(tags=["InsightFace"])
 logger = logging.getLogger(__name__)
@@ -47,16 +48,12 @@ try:
     # Temporarily disable proxy for FastRTC import
     import os
 
-    old_proxies = {
-        k: os.environ.get(k)
-        for k in ["http_proxy", "https_proxy", "all_proxy"]
-        if k in os.environ
-    }
+    old_proxies = {k: os.environ.get(k) for k in ["http_proxy", "https_proxy", "all_proxy"] if k in os.environ}
     for k in old_proxies:
         os.environ.pop(k, None)
 
-    from fastrtc import Stream, VideoStreamHandler
     import gradio as gr
+    from fastrtc import Stream, VideoStreamHandler
 
     FASTRTC_AVAILABLE = True
 
@@ -94,9 +91,7 @@ class ModelName(str, Enum):
 
 async def process_upload_file(file: UploadFile) -> np.ndarray:
     """Process uploaded image file"""
-    logger.info(
-        f"Processing uploaded file: {file.filename}, content_type: {file.content_type}"
-    )
+    logger.info(f"Processing uploaded file: {file.filename}, content_type: {file.content_type}")
 
     try:
         contents = await file.read()
@@ -127,9 +122,7 @@ async def process_upload_file(file: UploadFile) -> np.ndarray:
         if h > max_size or w > max_size:
             scale = min(max_size / h, max_size / w)
             new_h, new_w = int(h * scale), int(w * scale)
-            logger.info(
-                f"Resizing image from {h}x{w} to {new_h}x{new_w} (adaptive max: {max_size})"
-            )
+            logger.info(f"Resizing image from {h}x{w} to {new_h}x{new_w} (adaptive max: {max_size})")
             image_bgr = cv2.resize(image_bgr, (new_w, new_h))
 
         return image_bgr
@@ -154,9 +147,7 @@ async def get_system_info():
         "hardware": {
             "cuda_available": runtime_config.get("cuda_available", False),
             "cuda_version": runtime_config.get("cuda_version"),
-            "execution_providers": runtime_config.get(
-                "execution_providers", ["CPUExecutionProvider"]
-            ),
+            "execution_providers": runtime_config.get("execution_providers", ["CPUExecutionProvider"]),
         },
         "configuration": {
             "model": runtime_config.get("insightface_model_pack"),
@@ -217,9 +208,7 @@ async def detect_faces(
     - buffalo_s: 包含SCRFD-500MF检测器
     - antelopev2: 包含SCRFD-10G-BNKPS检测器
     """
-    logger.info(
-        f"Detect endpoint called with model: {model_name}, min_confidence: {min_confidence}"
-    )
+    logger.info(f"Detect endpoint called with model: {model_name}, min_confidence: {min_confidence}")
 
     try:
         image = await process_upload_file(file)
@@ -235,9 +224,7 @@ async def detect_faces(
 
         # Filter by confidence
         filtered_faces = [f for f in faces if f.confidence >= min_confidence]
-        logger.info(
-            f"Filtered to {len(filtered_faces)} faces with confidence >= {min_confidence}"
-        )
+        logger.info(f"Filtered to {len(filtered_faces)} faces with confidence >= {min_confidence}")
 
         # Format response
         response_faces = []
@@ -266,9 +253,7 @@ async def detect_faces(
 # ==================== Verification Endpoints ====================
 
 
-@router.post(
-    "/verify", response_model=VerificationResult, summary="人脸验证 (支持模型选择)"
-)
+@router.post("/verify", response_model=VerificationResult, summary="人脸验证 (支持模型选择)")
 async def verify_faces(
     file1: UploadFile = File(..., description="用于比较的第一张人脸图像"),
     file2: UploadFile = File(..., description="用于比较的第二张人脸图像"),
@@ -284,9 +269,7 @@ async def verify_faces(
     - model_name: 使用的模型名称
     - threshold: 验证判断的相似度阈值
     """
-    logger.info(
-        f"Verify endpoint called with model: {model_name.value}, threshold: {threshold}"
-    )
+    logger.info(f"Verify endpoint called with model: {model_name.value}, threshold: {threshold}")
 
     try:
         image1 = await process_upload_file(file1)
@@ -299,9 +282,7 @@ async def verify_faces(
         # Verify faces
         result = recognizer.verify(image1=image1, image2=image2, threshold=threshold)
 
-        logger.info(
-            f"Verification result: {result.is_same_person} (confidence: {result.confidence:.3f})"
-        )
+        logger.info(f"Verification result: {result.is_same_person} (confidence: {result.confidence:.3f})")
         return result
 
     except Exception as e:
@@ -334,9 +315,7 @@ async def recognize_faces(
     - 如果之前使用了相同的模型，将复用已加载的模型实例
     - 切换模型时，之前的模型会被自动卸载以节省内存
     """
-    logger.info(
-        f"Recognize endpoint called with model: {model_name.value}, threshold: {threshold}"
-    )
+    logger.info(f"Recognize endpoint called with model: {model_name.value}, threshold: {threshold}")
 
     try:
         image = await process_upload_file(file)
@@ -379,9 +358,7 @@ async def recognize_faces(
         raise HTTPException(status_code=500, detail=f"Recognition failed: {str(e)}")
 
 
-@router.post(
-    "/register", response_model=FaceRegisterResponse, summary="人脸注册 (支持模型选择)"
-)
+@router.post("/register", response_model=FaceRegisterResponse, summary="人脸注册 (支持模型选择)")
 async def register_face(
     file: UploadFile = File(..., description="包含待注册人脸的图像"),
     name: str = Form(..., description="注册人员的完整姓名"),
@@ -399,9 +376,7 @@ async def register_face(
     - department: 部门或组织单位 (可选)
     - employee_id: 唯一的员工或人员标识符 (可选)
     """
-    logger.info(
-        f"Register endpoint called with model: {model_name.value}, name: {name}"
-    )
+    logger.info(f"Register endpoint called with model: {model_name.value}, name: {name}")
 
     try:
         image = await process_upload_file(file)
@@ -421,9 +396,7 @@ async def register_face(
         faces = recognizer.detect_faces(image)
 
         if not faces:
-            raise HTTPException(
-                status_code=400, detail="No faces detected in the image"
-            )
+            raise HTTPException(status_code=400, detail="No faces detected in the image")
 
         if len(faces) > 1:
             raise HTTPException(
@@ -497,9 +470,7 @@ async def get_model_pool_status():
 
 
 @router.post("/models/preload", summary="预加载模型")
-async def preload_model(
-    model_names: List[ModelName] = Form(..., description="要预加载的模型名称列表")
-):
+async def preload_model(model_names: List[ModelName] = Form(..., description="要预加载的模型名称列表")):
     """
     预加载指定的模型到内存中。用于提前加载模型以避免首次请求时的延迟。
 
@@ -540,9 +511,7 @@ async def preload_model(
 
     except Exception as e:
         logger.error(f"Error in preload operation: {e}")
-        raise HTTPException(
-            status_code=500, detail=f"Failed to preload models: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Failed to preload models: {str(e)}")
 
 
 @router.post("/models/clear", summary="清除所有模型")
@@ -730,9 +699,7 @@ async def get_video_sources():
                     }
                 )
         except Exception as e:
-            cameras.append(
-                {"index": i, "name": f"摄像头 {i}", "available": False, "error": str(e)}
-            )
+            cameras.append({"index": i, "name": f"摄像头 {i}", "available": False, "error": str(e)})
 
     return {
         "cameras": cameras,

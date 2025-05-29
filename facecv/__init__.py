@@ -12,7 +12,7 @@ __author__ = "EurekAI Lab"
 __all__ = []
 # __all__ = [
 #     "FaceRecognizer",
-#     "VideoProcessor", 
+#     "VideoProcessor",
 #     "AttendanceSystem",
 #     "StrangerDetector",
 # ]

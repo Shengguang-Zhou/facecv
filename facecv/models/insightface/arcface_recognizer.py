@@ -4,14 +4,15 @@ This module implements face recognition using ArcFace models.
 """
 
 import logging
-import numpy as np
-import cv2
-from typing import List, Dict, Any, Optional, Tuple, Union
 import uuid
 from datetime import datetime
+from typing import Any, Dict, List, Optional, Tuple, Union
 
-from facecv.schemas.face import FaceDetection, VerificationResult, RecognitionResult
+import cv2
+import numpy as np
+
 from facecv.database.abstract_facedb import AbstractFaceDB
+from facecv.schemas.face import FaceDetection, RecognitionResult, VerificationResult
 
 logger = logging.getLogger(__name__)
 

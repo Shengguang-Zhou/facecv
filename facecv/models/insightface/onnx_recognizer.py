@@ -4,15 +4,16 @@ This module implements face recognition using ONNX Runtime for inference.
 """
 
 import logging
-import numpy as np
-import cv2
-import onnxruntime as ort
-from typing import List, Dict, Any, Optional, Tuple
 import uuid
 from datetime import datetime
+from typing import Any, Dict, List, Optional, Tuple
 
-from facecv.schemas.face import FaceDetection, VerificationResult, RecognitionResult
+import cv2
+import numpy as np
+import onnxruntime as ort
+
 from facecv.database.abstract_facedb import AbstractFaceDB
+from facecv.schemas.face import FaceDetection, RecognitionResult, VerificationResult
 
 logger = logging.getLogger(__name__)
 

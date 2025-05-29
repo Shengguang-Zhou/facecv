@@ -6,15 +6,14 @@ It handles model loading, caching, and integration with the database system.
 
 import logging
 import os
-from typing import Dict, Any, Optional, Union, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 from facecv.config.database import DatabaseConfig
-from facecv.database.factory import create_face_database
 from facecv.database.abstract_facedb import AbstractFaceDB
-
+from facecv.database.factory import create_face_database
+from facecv.models.insightface.arcface_recognizer import ArcFaceRecognizer
 from facecv.models.insightface.onnx_recognizer import ONNXFaceRecognizer
 from facecv.models.insightface.real_recognizer import RealInsightFaceRecognizer
-from facecv.models.insightface.arcface_recognizer import ArcFaceRecognizer
 
 logger = logging.getLogger(__name__)
 

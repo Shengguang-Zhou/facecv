@@ -4,10 +4,12 @@
 与基于Pydantic的Settings类不同，RuntimeConfig允许在运行时修改值。
 """
 
-from typing import Dict, Any, Optional, List
-import threading
 import logging
 import os
+import threading
+from typing import Any, Dict, List, Optional
+
+import psutil
 
 from facecv.config.settings import get_settings
 from facecv.utils.cuda_utils import (
@@ -15,7 +17,6 @@ from facecv.utils.cuda_utils import (
     get_cudnn_version,
     get_execution_providers,
 )
-import psutil
 
 logger = logging.getLogger(__name__)
 
@@ -84,9 +85,7 @@ class RuntimeConfig:
                     det_size = [480, 480]
                     batch_size = 8
 
-                logger.info(
-                    f"GPU detected with {vram_gb:.1f}GB VRAM, using {model_pack}"
-                )
+                logger.info(f"GPU detected with {vram_gb:.1f}GB VRAM, using {model_pack}")
             except Exception as e:
                 # GPU detection failed, use default GPU settings
                 logger.info(f"GPU VRAM detection failed: {e}, using default GPU settings")
@@ -109,9 +108,7 @@ class RuntimeConfig:
                 det_size = [160, 160]
                 batch_size = 1
 
-            logger.info(
-                f"CPU mode: {cpu_cores} cores, {ram_gb:.1f}GB RAM, using {model_pack}"
-            )
+            logger.info(f"CPU mode: {cpu_cores} cores, {ram_gb:.1f}GB RAM, using {model_pack}")
 
         self._config = {
             "insightface_model_pack": model_pack,

@@ -25,23 +25,20 @@ print(runtime_config.get("insightface_model_pack"))
 ```
 """
 
-from .settings import Settings, get_settings, load_model_config, get_model_config
 from .database import DatabaseConfig, get_standardized_db_config
 from .runtime_config import RuntimeConfig, get_runtime_config
+from .settings import Settings, get_model_config, get_settings, load_model_config
 
 get_db_config = get_standardized_db_config
 
 __all__ = [
-    "Settings", 
+    "Settings",
     "get_settings",
-    
-    "load_model_config", 
+    "load_model_config",
     "get_model_config",
-    
     "DatabaseConfig",
     "get_db_config",
     "get_standardized_db_config",
-    
     "RuntimeConfig",
-    "get_runtime_config"
+    "get_runtime_config",
 ]
