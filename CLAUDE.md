@@ -23,3 +23,5 @@
 - when testing missing dependency, use .venv to install
 - please follow agile development style, always follow dev -> test -> fix  -> dev loop when doing work. When you are testing fastapi, for tmp test,  use curl, for reusable test use .http file. Make your files manageable in test folder if its a reusable file. For temporary file, remember clean i  up after testing
 - always start server in reload mode if needed
+- when you are unsure about a repository, use context7 mcp to help you
+- when you are writing a project, use nx mcp to help you understand structure

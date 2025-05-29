@@ -43,6 +43,7 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"CUDA 初始化警告: {e}")
     
+    
     # 测试数据库连接
     logger.info("测试数据库连接...")
     try:

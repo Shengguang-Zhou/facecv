@@ -26,3 +26,4 @@ aiofiles~=24.1.0
 setuptools~=80.8.0
 torch~=2.7.0
 python-multipart~=0.0.20
+pynvml~=11.5.0  # For NVIDIA GPU detection
