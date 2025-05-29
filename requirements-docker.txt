@@ -38,6 +38,7 @@ loguru>=0.7.0
 
 # ===== Performance =====
 psutil>=5.9.0
+pynvml~=11.5.0
 
 # ===== Pin problematic dependencies =====
 # These versions are known to work together

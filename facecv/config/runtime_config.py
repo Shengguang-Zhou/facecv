@@ -87,8 +87,9 @@ class RuntimeConfig:
                 logger.info(
                     f"GPU detected with {vram_gb:.1f}GB VRAM, using {model_pack}"
                 )
-            except:
+            except Exception as e:
                 # GPU detection failed, use default GPU settings
+                logger.info(f"GPU VRAM detection failed: {e}, using default GPU settings")
                 model_pack = "buffalo_l"
                 det_size = [640, 640]
                 batch_size = 10

@@ -9,4 +9,5 @@ aiofiles==23.2.1
 requests==2.31.0
 loguru==0.7.2
 psutil==5.9.6
+pynvml==11.5.0
 python-dotenv==1.0.0
