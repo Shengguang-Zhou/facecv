@@ -2,6 +2,7 @@
 
 from fastapi import APIRouter, File, UploadFile, HTTPException, Form, Query, BackgroundTasks, Depends
 from typing import List, Optional, Union, Dict, Any
+from enum import Enum
 import numpy as np
 from PIL import Image
 import io
@@ -25,8 +26,25 @@ from facecv.database.factory import get_default_database
 from facecv.core.webhook import webhook_manager, WebhookConfig, send_recognition_event
 from facecv.core.video_stream import VideoStreamProcessor, StreamConfig
 
-router = APIRouter(tags=["InsightFace-Lazy"])
+router = APIRouter(tags=["InsightFace"])
 logger = logging.getLogger(__name__)
+
+# Model name enum for Swagger dropdown
+class ModelName(str, Enum):
+    """Available InsightFace models"""
+    # Buffalo packages (full face analysis)
+    BUFFALO_L = "buffalo_l"
+    BUFFALO_M = "buffalo_m"
+    BUFFALO_S = "buffalo_s"
+    ANTELOPEV2 = "antelopev2"
+    
+    # SCRFD detection-only models
+    SCRFD_10G_BNKPS = "scrfd_10g_bnkps"
+    SCRFD_10G_KPS = "scrfd_10g_kps"
+    SCRFD_2P5G_BNKPS = "scrfd_2.5g_bnkps"
+    SCRFD_2P5G_KPS = "scrfd_2.5g_kps"
+    SCRFD_500M_BNKPS = "scrfd_500m_bnkps"
+    SCRFD_500M_KPS = "scrfd_500m_kps"
 
 async def process_upload_file(file: UploadFile) -> np.ndarray:
     """Process uploaded image file"""
@@ -66,7 +84,7 @@ async def process_upload_file(file: UploadFile) -> np.ndarray:
 @router.post("/detect", response_model=List[FaceDetection], summary="人脸检测 (支持SCRFD检测模型)")
 async def detect_faces(
     file: UploadFile = File(..., description="待检测的图像文件"),
-    model_name: str = Form("scrfd_10g", description="检测模型: scrfd_10g, scrfd_2.5g, scrfd_500m, buffalo_l/m/s"),
+    model_name: ModelName = Form(ModelName.SCRFD_10G_BNKPS, description="检测模型"),
     min_confidence: float = Form(0.5, description="最低检测置信度阈值")
 ):
     """
@@ -97,8 +115,8 @@ async def detect_faces(
         logger.info(f"Image processed successfully, shape: {image.shape}")
         
         # Get model from pool (lazy loading)
-        recognizer = model_pool.get_model(model_name)
-        logger.info(f"Using model: {model_name}")
+        recognizer = model_pool.get_model(model_name.value)
+        logger.info(f"Using model: {model_name.value}")
         
         # Detect faces
         faces = recognizer.detect_faces(image)
@@ -136,7 +154,7 @@ async def detect_faces(
 async def verify_faces(
     file1: UploadFile = File(..., description="用于比较的第一张人脸图像"),
     file2: UploadFile = File(..., description="用于比较的第二张人脸图像"),
-    model_name: str = Form("buffalo_l", description="模型名称: buffalo_l, buffalo_m, buffalo_s, antelopev2"),
+    model_name: ModelName = Form(ModelName.BUFFALO_L, description="模型名称"),
     threshold: float = Query(0.4, description="验证判断的相似度阈值")
 ):
     """
@@ -148,15 +166,15 @@ async def verify_faces(
     - model_name: 使用的模型名称
     - threshold: 验证判断的相似度阈值
     """
-    logger.info(f"Verify endpoint called with model: {model_name}, threshold: {threshold}")
+    logger.info(f"Verify endpoint called with model: {model_name.value}, threshold: {threshold}")
     
     try:
         image1 = await process_upload_file(file1)
         image2 = await process_upload_file(file2)
         
         # Get model from pool
-        recognizer = model_pool.get_model(model_name)
-        logger.info(f"Using model: {model_name}")
+        recognizer = model_pool.get_model(model_name.value)
+        logger.info(f"Using model: {model_name.value}")
         
         # Verify faces
         result = recognizer.verify(image1=image1, image2=image2, threshold=threshold)
@@ -173,7 +191,7 @@ async def verify_faces(
 @router.post("/recognize", response_model=List[RecognitionResult], summary="人脸识别 (支持模型选择)")
 async def recognize_faces(
     file: UploadFile = File(..., description="包含待识别人脸的图像"),
-    model_name: str = Form("buffalo_l", description="模型名称: buffalo_l, buffalo_m, buffalo_s, antelopev2"),
+    model_name: ModelName = Form(ModelName.BUFFALO_L, description="模型名称"),
     threshold: float = Form(0.35, description="识别匹配的相似度阈值")
 ):
     """
@@ -188,15 +206,15 @@ async def recognize_faces(
     - 如果之前使用了相同的模型，将复用已加载的模型实例
     - 切换模型时，之前的模型会被自动卸载以节省内存
     """
-    logger.info(f"Recognize endpoint called with model: {model_name}, threshold: {threshold}")
+    logger.info(f"Recognize endpoint called with model: {model_name.value}, threshold: {threshold}")
     
     try:
         image = await process_upload_file(file)
         logger.info(f"Image processed successfully, shape: {image.shape}")
         
         # Get model from pool (will reuse if same model)
-        recognizer = model_pool.get_model(model_name)
-        logger.info(f"Using model: {model_name}")
+        recognizer = model_pool.get_model(model_name.value)
+        logger.info(f"Using model: {model_name.value}")
         
         # Recognize faces
         results = recognizer.recognize(image, threshold=threshold)
@@ -233,7 +251,7 @@ async def recognize_faces(
 async def register_face(
     file: UploadFile = File(..., description="包含待注册人脸的图像"),
     name: str = Form(..., description="注册人员的完整姓名"),
-    model_name: str = Form("buffalo_l", description="模型名称: buffalo_l, buffalo_m, buffalo_s, antelopev2"),
+    model_name: ModelName = Form(ModelName.BUFFALO_L, description="模型名称"),
     department: Optional[str] = Form(None, description="部门或组织单位"),
     employee_id: Optional[str] = Form(None, description="唯一的员工或人员标识符")
 ):
@@ -247,14 +265,14 @@ async def register_face(
     - department: 部门或组织单位 (可选)
     - employee_id: 唯一的员工或人员标识符 (可选)
     """
-    logger.info(f"Register endpoint called with model: {model_name}, name: {name}")
+    logger.info(f"Register endpoint called with model: {model_name.value}, name: {name}")
     
     try:
         image = await process_upload_file(file)
         
         # Get model from pool
-        recognizer = model_pool.get_model(model_name)
-        logger.info(f"Using model: {model_name}")
+        recognizer = model_pool.get_model(model_name.value)
+        logger.info(f"Using model: {model_name.value}")
         
         # Prepare metadata
         face_metadata = {}
@@ -338,27 +356,48 @@ async def get_model_pool_status():
     }
 
 @router.post("/models/preload", summary="预加载模型")
-async def preload_model(model_name: str = Form(..., description="要预加载的模型名称")):
+async def preload_model(model_names: List[ModelName] = Form(..., description="要预加载的模型名称列表")):
     """
-    预加载指定的模型到内存中
+    预加载指定的模型到内存中。用于提前加载模型以避免首次请求时的延迟。
+    
+    **用途:**
+    - 在系统启动后预加载常用模型
+    - 在业务高峰前预热模型缓存
+    - 批量加载多个模型以支持不同精度需求
     
     **参数:**
-    - model_name: 模型名称 (buffalo_l/buffalo_m/buffalo_s/antelopev2)
+    - model_names: 模型名称列表 (buffalo_l/buffalo_m/buffalo_s/antelopev2/scrfd_*)
+    
+    **示例:**
+    ```
+    model_names=buffalo_l&model_names=scrfd_10g_bnkps
+    ```
     """
     try:
-        # Load model into pool
-        model = model_pool.get_model(model_name)
+        loaded_models = []
+        failed_models = []
+        
+        for model_name in model_names:
+            try:
+                # Load model into pool
+                model = model_pool.get_model(model_name.value)
+                loaded_models.append(model_name.value)
+                logger.info(f"Successfully preloaded model: {model_name.value}")
+            except Exception as e:
+                logger.error(f"Failed to preload model {model_name.value}: {e}")
+                failed_models.append({"model": model_name.value, "error": str(e)})
         
         return {
-            "success": True,
-            "message": f"Model {model_name} loaded successfully",
-            "model_name": model_name,
+            "success": len(failed_models) == 0,
+            "message": f"Loaded {len(loaded_models)} models, {len(failed_models)} failed",
+            "loaded_models": loaded_models,
+            "failed_models": failed_models,
             "current_models": list(model_pool._models.keys())
         }
         
     except Exception as e:
-        logger.error(f"Error preloading model: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to preload model: {str(e)}")
+        logger.error(f"Error in preload operation: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to preload models: {str(e)}")
 
 @router.post("/models/clear", summary="清除所有模型")
 async def clear_models():

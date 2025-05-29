@@ -1,0 +1,73 @@
+version: '3.8'
+
+services:
+  mysql-test:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: test_password
+      MYSQL_DATABASE: facecv_test
+    ports:
+      - "3307:3306"
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - ./scripts/init.sql:/docker-entrypoint-initdb.d/init.sql
+
+  facecv-test:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    depends_on:
+      mysql-test:
+        condition: service_healthy
+    environment:
+      # Database Configuration
+      DATABASE_TYPE: mysql
+      MYSQL_HOST: mysql-test
+      MYSQL_PORT: 3306
+      MYSQL_USER: root
+      MYSQL_PASSWORD: test_password
+      MYSQL_DATABASE: facecv_test
+      
+      # API Configuration
+      API_HOST: 0.0.0.0
+      API_PORT: 7003
+      
+      # Model Configuration
+      INSIGHTFACE_MODEL: buffalo_s
+      USE_GPU: "false"
+      
+      # Test Environment
+      ENVIRONMENT: test
+    ports:
+      - "7003:7003"
+    volumes:
+      - ./models:/app/models
+      - ./test_images:/app/test_images
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7003/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  test-runner:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    depends_on:
+      facecv-test:
+        condition: service_healthy
+    environment:
+      API_URL: http://facecv-test:7003
+    volumes:
+      - ./tests:/app/tests
+      - ./test_images:/app/test_images
+    command: |
+      bash -c "
+        pip install pytest pytest-asyncio httpx &&
+        pytest tests/api/ -v --tb=short
+      "

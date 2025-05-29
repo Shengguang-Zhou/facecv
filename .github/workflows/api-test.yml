@@ -1,0 +1,418 @@
+name: API Test Suite
+
+on:
+  push:
+    branches: [ main, master, develop ]
+  pull_request:
+    branches: [ main, master, develop ]
+
+env:
+  PYTHON_VERSION: '3.10'
+  MYSQL_DATABASE: facecv_test
+  MYSQL_ROOT_PASSWORD: test_password
+  
+jobs:
+  lint:
+    name: Code Quality Checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          
+      - name: Cache pip packages
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements*.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+            
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install flake8 black isort mypy
+          
+      - name: Run flake8
+        run: flake8 facecv/ --max-line-length=120 --extend-ignore=E203,W503
+        continue-on-error: true
+        
+      - name: Check black formatting
+        run: black --check facecv/
+        continue-on-error: true
+        
+      - name: Check import sorting
+        run: isort --check-only facecv/
+        continue-on-error: true
+
+  test-setup:
+    name: Test Environment Setup
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: ${{ env.MYSQL_ROOT_PASSWORD }}
+          MYSQL_DATABASE: ${{ env.MYSQL_DATABASE }}
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+          
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libgl1-mesa-glx \
+            libglib2.0-0 \
+            libsm6 \
+            libxext6 \
+            libxrender-dev \
+            libgomp1 \
+            wget
+            
+      - name: Cache pip packages
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements*.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+            
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest pytest-asyncio pytest-cov httpx
+          
+      - name: Download test models
+        run: |
+          mkdir -p models
+          # Download minimal test models
+          python scripts/download_models_simple.py --minimal
+        continue-on-error: true
+        
+      - name: Setup test database
+        env:
+          MYSQL_HOST: localhost
+          MYSQL_PORT: 3306
+          MYSQL_USER: root
+          MYSQL_PASSWORD: ${{ env.MYSQL_ROOT_PASSWORD }}
+          MYSQL_DATABASE: ${{ env.MYSQL_DATABASE }}
+        run: |
+          mysql -h localhost -u root -p${{ env.MYSQL_ROOT_PASSWORD }} ${{ env.MYSQL_DATABASE }} < scripts/init.sql || true
+          
+      - name: Create .env file
+        run: |
+          cat > .env << EOF
+          # Database Configuration
+          DATABASE_TYPE=mysql
+          MYSQL_HOST=localhost
+          MYSQL_PORT=3306
+          MYSQL_USER=root
+          MYSQL_PASSWORD=${{ env.MYSQL_ROOT_PASSWORD }}
+          MYSQL_DATABASE=${{ env.MYSQL_DATABASE }}
+          
+          # API Configuration
+          API_HOST=0.0.0.0
+          API_PORT=7003
+          
+          # Model Configuration
+          INSIGHTFACE_MODEL=buffalo_s
+          USE_GPU=false
+          EOF
+
+  api-health-test:
+    name: API Health & Startup Tests
+    needs: test-setup
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: ${{ env.MYSQL_ROOT_PASSWORD }}
+          MYSQL_DATABASE: ${{ env.MYSQL_DATABASE }}
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+          
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgl1-mesa-glx libglib2.0-0 libsm6 libxext6 libxrender-dev libgomp1
+          
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          
+      - name: Create .env file
+        run: |
+          cat > .env << EOF
+          DATABASE_TYPE=mysql
+          MYSQL_HOST=localhost
+          MYSQL_PORT=3306
+          MYSQL_USER=root
+          MYSQL_PASSWORD=${{ env.MYSQL_ROOT_PASSWORD }}
+          MYSQL_DATABASE=${{ env.MYSQL_DATABASE }}
+          API_HOST=0.0.0.0
+          API_PORT=7003
+          INSIGHTFACE_MODEL=buffalo_s
+          USE_GPU=false
+          EOF
+          
+      - name: Start API server
+        run: |
+          python main.py &
+          echo $! > server.pid
+          sleep 30  # Wait for server to start
+          
+      - name: Test API health endpoints
+        run: |
+          # Test root endpoint
+          curl -f http://localhost:7003/ || exit 1
+          
+          # Test health endpoints
+          curl -f http://localhost:7003/health || exit 1
+          curl -f http://localhost:7003/api/v1/health || exit 1
+          curl -f http://localhost:7003/api/v1/system/health || exit 1
+          
+          # Test InsightFace health
+          curl -f http://localhost:7003/api/v1/insightface/health || exit 1
+          
+          # Test DeepFace health
+          curl -f http://localhost:7003/api/v1/deepface/health || exit 1
+          
+      - name: Stop server
+        if: always()
+        run: |
+          if [ -f server.pid ]; then
+            kill $(cat server.pid) || true
+          fi
+
+  api-endpoint-test:
+    name: API Endpoint Tests
+    needs: test-setup
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: ${{ env.MYSQL_ROOT_PASSWORD }}
+          MYSQL_DATABASE: ${{ env.MYSQL_DATABASE }}
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+          
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgl1-mesa-glx libglib2.0-0 libsm6 libxext6 libxrender-dev libgomp1
+          
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest pytest-asyncio httpx
+          
+      - name: Create .env file
+        run: |
+          cat > .env << EOF
+          DATABASE_TYPE=mysql
+          MYSQL_HOST=localhost
+          MYSQL_PORT=3306
+          MYSQL_USER=root
+          MYSQL_PASSWORD=${{ env.MYSQL_ROOT_PASSWORD }}
+          MYSQL_DATABASE=${{ env.MYSQL_DATABASE }}
+          API_HOST=0.0.0.0
+          API_PORT=7003
+          INSIGHTFACE_MODEL=buffalo_s
+          USE_GPU=false
+          EOF
+          
+      - name: Run API tests
+        run: |
+          pytest tests/api/ -v --tb=short -k "health" || true
+          
+      - name: Test critical endpoints
+        run: |
+          python -m pytest tests/test_api_endpoints.py -v || true
+
+  integration-test:
+    name: Integration Tests
+    needs: [api-health-test]
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: ${{ env.MYSQL_ROOT_PASSWORD }}
+          MYSQL_DATABASE: ${{ env.MYSQL_DATABASE }}
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+          
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgl1-mesa-glx libglib2.0-0 libsm6 libxext6 libxrender-dev libgomp1
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest pytest-asyncio httpx
+          
+      - name: Create .env file
+        run: |
+          cat > .env << EOF
+          DATABASE_TYPE=mysql
+          MYSQL_HOST=localhost
+          MYSQL_PORT=3306
+          MYSQL_USER=root
+          MYSQL_PASSWORD=${{ env.MYSQL_ROOT_PASSWORD }}
+          MYSQL_DATABASE=${{ env.MYSQL_DATABASE }}
+          API_HOST=0.0.0.0
+          API_PORT=7003
+          INSIGHTFACE_MODEL=buffalo_s
+          USE_GPU=false
+          EOF
+          
+      - name: Start API server
+        run: |
+          python main.py &
+          echo $! > server.pid
+          sleep 30
+          
+      - name: Run integration tests
+        run: |
+          # Create test script
+          cat > test_integration.py << 'EOF'
+          import httpx
+          import asyncio
+          import sys
+          
+          async def test_api_integration():
+              async with httpx.AsyncClient(base_url="http://localhost:7003") as client:
+                  # Test health
+                  resp = await client.get("/api/v1/health")
+                  assert resp.status_code == 200
+                  
+                  # Test InsightFace model status
+                  resp = await client.get("/api/v1/insightface/models/status")
+                  assert resp.status_code == 200
+                  
+                  # Test face list (should be empty initially)
+                  resp = await client.get("/api/v1/insightface/faces")
+                  assert resp.status_code == 200
+                  
+                  print("All integration tests passed!")
+                  
+          if __name__ == "__main__":
+              asyncio.run(test_api_integration())
+          EOF
+          
+          python test_integration.py
+          
+      - name: Stop server
+        if: always()
+        run: |
+          if [ -f server.pid ]; then
+            kill $(cat server.pid) || true
+          fi
+
+  docker-test:
+    name: Docker Build Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+        
+      - name: Build Docker image
+        run: |
+          docker build -t facecv:test .
+          
+      - name: Test Docker image
+        run: |
+          # Run container with test config
+          docker run -d --name facecv-test \
+            -p 7003:7003 \
+            -e DATABASE_TYPE=sqlite \
+            -e SQLITE_PATH=/app/test.db \
+            -e INSIGHTFACE_MODEL=buffalo_s \
+            -e USE_GPU=false \
+            facecv:test
+            
+          # Wait for startup
+          sleep 30
+          
+          # Test health endpoint
+          curl -f http://localhost:7003/health || exit 1
+          
+          # Stop container
+          docker stop facecv-test
+          docker rm facecv-test
+
+  summary:
+    name: CI/CD Summary
+    needs: [lint, api-health-test, api-endpoint-test, integration-test, docker-test]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Summary
+        run: |
+          echo "## CI/CD Pipeline Summary"
+          echo "- Lint: ${{ needs.lint.result }}"
+          echo "- API Health Test: ${{ needs.api-health-test.result }}"
+          echo "- API Endpoint Test: ${{ needs.api-endpoint-test.result }}"
+          echo "- Integration Test: ${{ needs.integration-test.result }}"
+          echo "- Docker Test: ${{ needs.docker-test.result }}"
