@@ -1,4 +1,11 @@
 # Files and directories to exclude from deployment
+chroma_db
+data
+docs
+examples
+tests
+weights
+
 .env
 .env.*
 *.db

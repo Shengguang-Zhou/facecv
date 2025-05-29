@@ -7,6 +7,7 @@ CLAUDE.md
 data
 chroma
 docs
+examples
 *.h2.db
 *.db
 # C extensions

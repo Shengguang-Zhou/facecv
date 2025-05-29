@@ -14,7 +14,6 @@ db_config = get_db_config()
 _mysql_facedb = None
 _chromadb_facedb = None
 _hybrid_facedb = None
-_deepface_chromadb = None
 
 logging.basicConfig(level=logging.INFO)
 
@@ -64,22 +63,6 @@ def get_hybrid_facedb():
     return _hybrid_facedb if _hybrid_facedb is not False else None
 
 
-def get_deepface_chromadb():
-    """延迟导入 DeepFace ChromaDB 数据库类"""
-    global _deepface_chromadb
-    if _deepface_chromadb is None:
-        try:
-            from .deepface_chromadb import DeepFaceChromaDB, CHROMADB_AVAILABLE
-            if CHROMADB_AVAILABLE:
-                _deepface_chromadb = DeepFaceChromaDB
-                logging.info("DeepFace ChromaDB is available and ready to use")
-            else:
-                logging.error("ChromaDB not installed for DeepFace. Install with: pip install chromadb")
-                _deepface_chromadb = False
-        except ImportError as e:
-            logging.error(f"DeepFace ChromaDB 数据库不可用: {e}")
-            _deepface_chromadb = False
-    return _deepface_chromadb if _deepface_chromadb is not False else None
 
 
 class FaceDBFactory:
@@ -90,7 +73,6 @@ class FaceDBFactory:
         'mysql': get_mysql_facedb,
         'chromadb': get_chromadb_facedb,
         'hybrid': get_hybrid_facedb,
-        'deepface_chromadb': get_deepface_chromadb,
     }
     
     @classmethod
@@ -148,12 +130,6 @@ class FaceDBFactory:
             
             elif db_type == 'hybrid':
                 return db_class(config=config or db_config)
-            
-            elif db_type == 'deepface_chromadb':
-                # DeepFace ChromaDB 需要集合名和持久化目录
-                collection_name = kwargs.get('collection_name', 'deepface_faces')
-                persist_directory = kwargs.get('persist_directory', './deepface_chroma_db')
-                return db_class(collection_name=collection_name, persist_directory=persist_directory)
             
             else:
                 # 通用情况，传递所有参数
