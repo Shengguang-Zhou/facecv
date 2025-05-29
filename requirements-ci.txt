@@ -1,0 +1,32 @@
+# CI-specific requirements (without heavy dependencies like torch)
+# This file is used for GitHub Actions CI testing
+
+# Core dependencies from requirements.txt (without torch)
+insightface~=0.7.3
+deepface~=0.0.79
+chromadb~=1.0.10
+onnxruntime~=1.16.3
+opencv-python~=4.8.1
+fastapi~=0.115.9
+numpy~=1.24.3
+Pillow~=10.1.0
+scikit-learn~=1.3.2
+pydantic~=2.9.2
+pymysql~=1.1.0
+aiomysql~=0.2.0
+requests~=2.31.0
+python-dotenv~=1.0.0
+SQLAlchemy~=2.0.23
+uvicorn~=0.24.0
+loguru~=0.7.2
+tqdm~=4.67.1
+aiofiles~=24.1.0
+setuptools~=80.8.0
+python-multipart~=0.0.20
+pynvml~=11.5.0
+psutil~=5.9.0
+
+# Test dependencies
+pytest~=7.4.3
+pytest-asyncio~=0.21.1
+httpx~=0.25.2
