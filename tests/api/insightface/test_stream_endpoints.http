@@ -1,0 +1,50 @@
+### Test InsightFace Stream Processing Endpoints
+
+### Test Stream Recognition Endpoint
+POST http://localhost:7003/api/v1/insightface/stream/process_recognition
+Content-Type: application/json
+
+{
+  "camera_id": "0",
+  "webhook_url": "http://localhost:8000/webhook",
+  "duration": 30,
+  "skip_frames": 2,
+  "model": "buffalo_l",
+  "use_scrfd": true,
+  "return_frame": true,
+  "draw_bbox": true,
+  "threshold": 0.35,
+  "return_all_candidates": false,
+  "max_candidates": 5
+}
+
+###
+
+### Test Stream Verification Endpoint
+POST http://localhost:7003/api/v1/insightface/stream/process_verification
+Content-Type: application/json
+
+{
+  "camera_id": "rtsp://192.168.1.100:554/stream",
+  "webhook_url": "http://localhost:8000/webhook",
+  "target_name": "张三",
+  "verification_threshold": 0.4,
+  "alert_on_mismatch": true,
+  "duration": 60,
+  "skip_frames": 3,
+  "return_frame": true,
+  "draw_bbox": true,
+  "threshold": 0.35
+}
+
+###
+
+### Get Stream Status
+GET http://localhost:7003/api/v1/insightface/stream/status/{{stream_id}}
+
+###
+
+### Stop Stream Processing
+POST http://localhost:7003/api/v1/insightface/stream/stop/{{stream_id}}
+
+###

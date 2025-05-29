@@ -56,6 +56,7 @@ class RealInsightFaceRecognizer:
         self.similarity_threshold = similarity_threshold
         self.enable_emotion = enable_emotion
         self.enable_mask_detection = enable_mask_detection
+        self.prefer_gpu = prefer_gpu
         self.app = None
         
         try:
@@ -393,8 +394,12 @@ class RealInsightFaceRecognizer:
             return VerificationResult(
                 is_same_person=False,
                 confidence=0.0,
+                distance=2.0,
+                threshold=threshold,
                 face1_bbox=[0, 0, 0, 0],
-                face2_bbox=[0, 0, 0, 0]
+                face2_bbox=[0, 0, 0, 0],
+                face1_quality=0.0,
+                face2_quality=0.0
             )
         
         face1 = faces1[0]
@@ -414,17 +419,34 @@ class RealInsightFaceRecognizer:
             return VerificationResult(
                 is_same_person=False,
                 confidence=0.0,
+                distance=2.0,
+                threshold=threshold,
                 face1_bbox=face1.bbox,
-                face2_bbox=face2.bbox
+                face2_bbox=face2.bbox,
+                face1_quality=face1.quality_score if hasattr(face1, 'quality_score') else 1.0,
+                face2_quality=face2.quality_score if hasattr(face2, 'quality_score') else 1.0
             )
         
+        # Flatten embeddings if they have batch dimension
+        if embedding1.ndim > 1:
+            embedding1 = embedding1.flatten()
+        if embedding2.ndim > 1:
+            embedding2 = embedding2.flatten()
+            
         similarity = np.dot(embedding1, embedding2) / (np.linalg.norm(embedding1) * np.linalg.norm(embedding2))
+        
+        # Calculate distance (1 - similarity)
+        distance = 1.0 - similarity
         
         result = VerificationResult(
             is_same_person=similarity >= threshold,
             confidence=float(similarity),
+            distance=float(distance),
+            threshold=float(threshold),
             face1_bbox=face1.bbox,
-            face2_bbox=face2.bbox
+            face2_bbox=face2.bbox,
+            face1_quality=face1.quality_score if hasattr(face1, 'quality_score') else 1.0,
+            face2_quality=face2.quality_score if hasattr(face2, 'quality_score') else 1.0
         )
         
         logger.info(f"Verification result: {result.is_same_person} (confidence: {result.confidence:.3f})")
@@ -490,6 +512,38 @@ class RealInsightFaceRecognizer:
                 logger.error(f"Error registering face: {e}")
         
         return face_ids
+    
+    def delete(self, face_id: str = None, name: str = None) -> Union[bool, int]:
+        """
+        Delete faces from the database.
+        
+        Args:
+            face_id: Specific face ID to delete
+            name: Delete all faces with this name
+            
+        Returns:
+            For face_id: True if deletion was successful, False otherwise
+            For name: Number of faces deleted (0 if none found)
+        """
+        if not self.face_db:
+            logger.error("Face database not available for deletion")
+            return False if face_id else 0
+            
+        try:
+            if face_id:
+                return self.face_db.delete_face_by_id(face_id)
+            elif name:
+                # Delete all faces with this name
+                deleted_count = self.face_db.delete_face_by_name(name)
+                logger.info(f"Deleted {deleted_count} faces for name: {name}")
+                return deleted_count
+            else:
+                logger.error("Either face_id or name must be provided for deletion")
+                return False if face_id else 0
+                
+        except Exception as e:
+            logger.error(f"Error deleting faces: {e}")
+            return False if face_id else 0
     
     def get_model_info(self) -> Dict[str, Any]:
         """

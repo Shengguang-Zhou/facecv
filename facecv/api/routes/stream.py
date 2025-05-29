@@ -6,6 +6,8 @@ from pydantic import BaseModel, Field
 import json
 import asyncio
 import logging
+import uuid
+from datetime import datetime
 
 # from facecv import FaceRecognizer  # 暂时禁用
 from facecv.core.video_stream import VideoStreamProcessor, StreamConfig
@@ -86,7 +88,7 @@ class VideoSourcesResponse(BaseModel):
 )
 async def process_video_stream(
     source: str = Query(..., description="视频源标识符：摄像头索引(0,1,2...)、RTSP URL或视频文件路径", example="0"),
-    duration: Optional[int] = Query(None, description="处理持续时间（秒），1-3600秒范围，空值表示处理到流结束", example=30, ge=1, le=3600),
+    webhook_url: Optional[str] = Query(None, description="Webhook URL，用于接收实时识别结果"),
     skip_frames: int = Query(1, description="帧采样率，1=处理每帧，2=每2帧，数值越大速度越快但精度降低", example=2, ge=1, le=30),
     show_preview: bool = Query(False, description="是否显示预览窗口，仅本地环境有效，服务器部署请设为false", example=False),
     recognizer = Depends(get_recognizer)
@@ -95,7 +97,9 @@ async def process_video_stream(
     处理视频流进行实时人脸识别分析
     
     此接口处理来自各种视频源的实时视频流，包括本地摄像头、网络RTSP流和视频文件。
-    系统会检测每一帧中的人脸，与已注册的人脸数据库进行识别比对，并返回详细的统计信息。
+    系统会检测每一帧中的人脸，与已注册的人脸数据库进行识别比对。
+    如果提供了webhook_url，识别结果会实时发送到指定的URL。
+    该API会持续处理视频流直到用户手动停止（按q键或调用停止接口）。
     
     **请求参数详细说明:**
     
@@ -112,15 +116,25 @@ async def process_video_stream(
       - "/data/recordings/security_20240115.mp4"
     - 验证规则: 非空字符串，支持的格式
     
-    **duration** `Optional[int]`:
-    - 描述: 处理持续时间（秒）
-    - 取值范围: 1-3600秒（1小时）
-    - 默认值: None（处理到流结束）
-    - 使用建议:
-      - 测试: 30-60秒
-      - 短视频分析: 300秒（5分钟）
-      - 实时监控: 不设置（持续处理）
-    - 注意: 文件处理会在文件结束时自动停止
+    **webhook_url** `Optional[str]`:
+    - 描述: Webhook URL，用于接收实时识别结果
+    - 格式: 完整的HTTP/HTTPS URL
+    - 默认值: None（不发送webhook）
+    - 使用示例: "http://localhost:8080/face-webhook"
+    - Webhook数据格式:
+      ```json
+      {
+          "timestamp": "2024-01-15T10:00:00",
+          "source": "0",
+          "faces": [
+              {
+                  "name": "张三",
+                  "confidence": 0.95,
+                  "bbox": [100, 100, 200, 200]
+              }
+          ]
+      }
+      ```
     
     **skip_frames** `int`:
     - 描述: 帧采样率，控制处理频率和性能
@@ -166,7 +180,7 @@ async def process_video_stream(
     - 含义: 从开始到结束的总时间
     - 范围: 0或正整数
     - 示例: 30（处理了30秒）
-    - 注意: 可能小于请求的duration（文件结束等原因）
+    - 注意: 持续处理直到手动停止
     
     **total_detections** `int`:
     - 描述: 在所有处理帧中检测到的人脸总数
@@ -215,9 +229,9 @@ async def process_video_stream(
     
     **完整使用示例:**
     
-    **示例1: 处理默认摄像头30秒**
+    **示例1: 处理默认摄像头并发送webhook**
     ```bash
-    curl -X POST "http://localhost:7003/api/v1/stream/process?source=0&duration=30&skip_frames=2&show_preview=false"
+    curl -X POST "http://localhost:7003/api/v1/stream/process?source=0&webhook_url=http://localhost:8080/webhook&skip_frames=2&show_preview=false"
     ```
     响应:
     ```json
@@ -343,7 +357,23 @@ async def process_video_stream(
         # 转换摄像头索引
         if source.isdigit():
             source = int(source)
-            
+        
+        # 如果提供了webhook URL，配置webhook
+        stream_id = str(uuid.uuid4())
+        if webhook_url:
+            from facecv.core.webhook import webhook_manager, WebhookConfig
+            webhook_config = WebhookConfig(
+                url=webhook_url,
+                timeout=30,
+                retry_count=3,
+                retry_delay=1,
+                batch_size=1,  # 实时发送
+                batch_timeout=0.5
+            )
+            webhook_manager.add_webhook(stream_id, webhook_config)
+            if not webhook_manager.running:
+                webhook_manager.start()
+        
         # 配置流处理器
         config = StreamConfig(
             skip_frames=skip_frames,
@@ -352,33 +382,69 @@ async def process_video_stream(
         
         processor = VideoStreamProcessor(recognizer, config)
         
+        # 定义webhook回调
+        async def webhook_callback(results):
+            if webhook_url and results:
+                from facecv.core.webhook import send_recognition_event
+                faces_data = []
+                for result in results:
+                    faces_data.append({
+                        "name": result.name,
+                        "confidence": result.confidence,
+                        "bbox": result.bbox,
+                        "similarity": getattr(result, 'similarity', result.confidence)
+                    })
+                
+                send_recognition_event(
+                    camera_id=str(source),
+                    recognized_faces=faces_data,
+                    metadata={
+                        "stream_id": stream_id,
+                        "timestamp": datetime.now().isoformat()
+                    }
+                )
+        
         # 异步处理视频流
         results = await processor.process_stream_async(
             source=source,
-            duration=duration
+            callback=webhook_callback if webhook_url else None,
+            duration=None  # 持续处理直到手动停止
         )
+        
+        # 清理webhook
+        if webhook_url:
+            webhook_manager.remove_webhook(stream_id)
         
         # 统计结果
         total_faces = len(results)
         unique_names = list(set(r.name for r in results if r.name != "Unknown"))
         
+        # 计算每个人的统计信息
+        person_stats = {}
+        for r in results:
+            if r.name in unique_names:
+                if r.name not in person_stats:
+                    person_stats[r.name] = {"count": 0, "total_confidence": 0}
+                person_stats[r.name]["count"] += 1
+                person_stats[r.name]["total_confidence"] += r.confidence
+        
+        summary = [
+            PersonSummary(
+                name=name,
+                detections=stats["count"],
+                avg_similarity=stats["total_confidence"] / stats["count"]
+            )
+            for name, stats in sorted(person_stats.items(), key=lambda x: x[1]["count"], reverse=True)[:10]
+        ]
+        
         return StreamProcessResponse(
             status="completed",
             source=str(source),
-            duration=duration,
+            duration=None,  # 持续处理模式
             total_detections=total_faces,
             unique_persons=len(unique_names),
             persons=unique_names,
-            summary=[
-                PersonSummary(
-                    name=r.name,
-                    detections=sum(1 for x in results if x.name == r.name),
-                    avg_similarity=sum(x.confidence for x in results if x.name == r.name) / 
-                                    sum(1 for x in results if x.name == r.name)
-                )
-                for r in results
-                if r.name in unique_names
-            ][:10]  # 返回前10个人的统计
+            summary=summary
         )
         
     except Exception as e:

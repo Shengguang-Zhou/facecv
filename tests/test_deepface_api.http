@@ -1,0 +1,82 @@
+### Test DeepFace Health
+GET http://localhost:7073/api/v1/deepface/health
+
+###
+
+### Test Get All Faces
+GET http://localhost:7073/api/v1/deepface/faces/
+
+###
+
+### Test Register Face
+POST http://localhost:7073/api/v1/deepface/faces/
+Content-Type: multipart/form-data; boundary=----WebKitFormBoundary7MA4YWxkTrZu0gW
+
+------WebKitFormBoundary7MA4YWxkTrZu0gW
+Content-Disposition: form-data; name="name"
+
+Test Person
+------WebKitFormBoundary7MA4YWxkTrZu0gW
+Content-Disposition: form-data; name="file"; filename="test.jpg"
+Content-Type: image/jpeg
+
+< /home/a/桌面/图片/1.jpg
+------WebKitFormBoundary7MA4YWxkTrZu0gW--
+
+###
+
+### Test Recognize Face
+POST http://localhost:7073/api/v1/deepface/recognition
+Content-Type: multipart/form-data; boundary=----WebKitFormBoundary7MA4YWxkTrZu0gW
+
+------WebKitFormBoundary7MA4YWxkTrZu0gW
+Content-Disposition: form-data; name="file"; filename="test.jpg"
+Content-Type: image/jpeg
+
+< /home/a/桌面/图片/2.jpg
+------WebKitFormBoundary7MA4YWxkTrZu0gW
+Content-Disposition: form-data; name="threshold"
+
+0.6
+------WebKitFormBoundary7MA4YWxkTrZu0gW--
+
+###
+
+### Test Verify Faces
+POST http://localhost:7073/api/v1/deepface/verify/
+Content-Type: multipart/form-data; boundary=----WebKitFormBoundary7MA4YWxkTrZu0gW
+
+------WebKitFormBoundary7MA4YWxkTrZu0gW
+Content-Disposition: form-data; name="file1"; filename="test1.jpg"
+Content-Type: image/jpeg
+
+< /home/a/桌面/图片/1.jpg
+------WebKitFormBoundary7MA4YWxkTrZu0gW
+Content-Disposition: form-data; name="file2"; filename="test2.jpg"
+Content-Type: image/jpeg
+
+< /home/a/桌面/图片/2.jpg
+------WebKitFormBoundary7MA4YWxkTrZu0gW
+Content-Disposition: form-data; name="threshold"
+
+0.6
+------WebKitFormBoundary7MA4YWxkTrZu0gW--
+
+###
+
+### Test Analyze Face
+POST http://localhost:7073/api/v1/deepface/analyze/
+Content-Type: multipart/form-data; boundary=----WebKitFormBoundary7MA4YWxkTrZu0gW
+
+------WebKitFormBoundary7MA4YWxkTrZu0gW
+Content-Disposition: form-data; name="file"; filename="test.jpg"
+Content-Type: image/jpeg
+
+< /home/a/桌面/图片/1.jpg
+------WebKitFormBoundary7MA4YWxkTrZu0gW
+Content-Disposition: form-data; name="actions"
+
+emotion,age,gender,race
+------WebKitFormBoundary7MA4YWxkTrZu0gW--
+
+###

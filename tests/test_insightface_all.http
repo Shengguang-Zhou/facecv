@@ -1,0 +1,128 @@
+### Comprehensive InsightFace API Tests
+
+### 1. Health Check
+GET http://localhost:7003/api/v1/insightface/health
+
+### 2. Register Face
+POST http://localhost:7003/api/v1/insightface/faces/
+Content-Type: multipart/form-data; boundary=----WebKitFormBoundary7MA4YWxkTrZu0gW
+
+------WebKitFormBoundary7MA4YWxkTrZu0gW
+Content-Disposition: form-data; name="name"
+
+InsightFace Test User
+------WebKitFormBoundary7MA4YWxkTrZu0gW
+Content-Disposition: form-data; name="file"; filename="test_face.jpg"
+Content-Type: image/jpeg
+
+< /home/a/PycharmProjects/facecv/test_images/test_face.jpg
+------WebKitFormBoundary7MA4YWxkTrZu0gW
+Content-Disposition: form-data; name="metadata"
+
+{"department": "Engineering", "employee_id": "INS001"}
+------WebKitFormBoundary7MA4YWxkTrZu0gW--
+
+### 3. List All Faces
+GET http://localhost:7003/api/v1/insightface/faces/
+
+### 4. Get Face by Name
+GET http://localhost:7003/api/v1/insightface/faces/name/InsightFace%20Test%20User
+
+### 5. Face Recognition
+POST http://localhost:7003/api/v1/insightface/recognition
+Content-Type: multipart/form-data; boundary=----WebKitFormBoundary7MA4YWxkTrZu0gW
+
+------WebKitFormBoundary7MA4YWxkTrZu0gW
+Content-Disposition: form-data; name="file"; filename="test_face.jpg"
+Content-Type: image/jpeg
+
+< /home/a/PycharmProjects/facecv/test_images/test_face.jpg
+------WebKitFormBoundary7MA4YWxkTrZu0gW
+Content-Disposition: form-data; name="threshold"
+
+0.4
+------WebKitFormBoundary7MA4YWxkTrZu0gW--
+
+### 6. Face Verification - Same Person
+POST http://localhost:7003/api/v1/insightface/verify/
+Content-Type: multipart/form-data; boundary=----WebKitFormBoundary7MA4YWxkTrZu0gW
+
+------WebKitFormBoundary7MA4YWxkTrZu0gW
+Content-Disposition: form-data; name="file1"; filename="face1.jpg"
+Content-Type: image/jpeg
+
+< /home/a/PycharmProjects/facecv/test_images/test_face.jpg
+------WebKitFormBoundary7MA4YWxkTrZu0gW
+Content-Disposition: form-data; name="file2"; filename="face2.jpg"
+Content-Type: image/jpeg
+
+< /home/a/PycharmProjects/facecv/test_images/test_face.jpg
+------WebKitFormBoundary7MA4YWxkTrZu0gW
+Content-Disposition: form-data; name="threshold"
+
+0.4
+------WebKitFormBoundary7MA4YWxkTrZu0gW--
+
+### 7. Face Analysis
+POST http://localhost:7003/api/v1/insightface/analyze/
+Content-Type: multipart/form-data; boundary=----WebKitFormBoundary7MA4YWxkTrZu0gW
+
+------WebKitFormBoundary7MA4YWxkTrZu0gW
+Content-Disposition: form-data; name="file"; filename="test_face.jpg"
+Content-Type: image/jpeg
+
+< /home/a/PycharmProjects/facecv/test_images/test_face.jpg
+------WebKitFormBoundary7MA4YWxkTrZu0gW--
+
+### 8. Update Face (name only)
+PUT http://localhost:7003/api/v1/insightface/faces/{face_id}
+Content-Type: multipart/form-data; boundary=----WebKitFormBoundary7MA4YWxkTrZu0gW
+
+------WebKitFormBoundary7MA4YWxkTrZu0gW
+Content-Disposition: form-data; name="name"
+
+InsightFace Updated User
+------WebKitFormBoundary7MA4YWxkTrZu0gW--
+
+### 9. Delete Face
+DELETE http://localhost:7003/api/v1/insightface/faces/{face_id}
+
+### 10. Video Face Sampling
+POST http://localhost:7003/api/v1/insightface/video_face/
+Content-Type: multipart/form-data; boundary=----WebKitFormBoundary7MA4YWxkTrZu0gW
+
+------WebKitFormBoundary7MA4YWxkTrZu0gW
+Content-Disposition: form-data; name="name"
+
+Video Test User
+------WebKitFormBoundary7MA4YWxkTrZu0gW
+Content-Disposition: form-data; name="video_source"
+
+0
+------WebKitFormBoundary7MA4YWxkTrZu0gW
+Content-Disposition: form-data; name="sample_interval"
+
+30
+------WebKitFormBoundary7MA4YWxkTrZu0gW
+Content-Disposition: form-data; name="max_samples"
+
+5
+------WebKitFormBoundary7MA4YWxkTrZu0gW--
+
+### 11. Batch Processing
+POST http://localhost:7003/api/v1/insightface/batch_process
+Content-Type: application/json
+
+{
+  "image_urls": [
+    "https://example.com/face1.jpg",
+    "https://example.com/face2.jpg"
+  ],
+  "operation": "recognize",
+  "options": {
+    "threshold": 0.4
+  }
+}
+
+### 12. Stream Recognition (SSE format)
+GET http://localhost:7003/api/v1/insightface/recognize/webcam/stream?camera_id=0&source=0&threshold=0.4&fps=15&format=sse

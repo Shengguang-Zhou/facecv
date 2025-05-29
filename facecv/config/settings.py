@@ -67,7 +67,7 @@ class Settings(BaseSettings):
     )
     
     # 数据库配置
-    db_type: Literal["sqlite", "mysql", "chromadb", "hybrid"] = Field(default="sqlite", description="数据库类型")
+    db_type: Literal["sqlite", "mysql", "chromadb", "hybrid"] = Field(default="mysql", description="数据库类型")
     db_connection_string: Optional[str] = Field(default=None, description="数据库连接串")
     
     mysql_host: str = Field(default="localhost", description="MySQL主机地址")

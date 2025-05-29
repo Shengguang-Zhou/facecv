@@ -1,7 +1,7 @@
 """Real InsightFace API Routes (Non-Mock)"""
 
-from fastapi import APIRouter, File, UploadFile, HTTPException, Form, Query
-from typing import List, Optional
+from fastapi import APIRouter, File, UploadFile, HTTPException, Form, Query, BackgroundTasks, Depends
+from typing import List, Optional, Union, Dict, Any
 import numpy as np
 from PIL import Image
 import io
@@ -9,19 +9,29 @@ import logging
 import cv2
 import uuid
 from datetime import datetime
+import asyncio
+import base64
+import threading
 
 from facecv.models.insightface.onnx_recognizer import ONNXFaceRecognizer
 from facecv.models.insightface.real_recognizer import RealInsightFaceRecognizer
 from facecv.models.insightface.arcface_recognizer import ArcFaceRecognizer
-from facecv.schemas.face import FaceDetection, VerificationResult, RecognitionResult, FaceRegisterResponse
+from facecv.schemas.face import (
+    FaceDetection, VerificationResult, RecognitionResult, FaceRegisterResponse,
+    StreamRecognitionRequest, StreamVerificationRequest, StreamProcessResponse,
+    StreamWebhookPayload
+)
 from facecv.config import get_settings
 from facecv.database.factory import get_default_database
+from facecv.core.webhook import webhook_manager, WebhookConfig, send_recognition_event
+from facecv.core.video_stream import VideoStreamProcessor, StreamConfig
 
 router = APIRouter(tags=["InsightFace"])
 logger = logging.getLogger(__name__)
 
-# Global instance
+# Global instance - cache recognizer to avoid reloading
 _recognizer = None
+_recognizer_cache = {}  # Cache for different model configurations
 
 def get_recognizer():
     """
@@ -42,75 +52,80 @@ def get_recognizer():
         Union[ArcFaceRecognizer, RealInsightFaceRecognizer]: 配置好的识别器实例
     """
     global _recognizer
-    if _recognizer is None:
-        from facecv.config import get_settings, get_runtime_config
+    if _recognizer is not None:
+        logger.info("Returning cached recognizer instance")
+        return _recognizer
         
-        settings = get_settings()
-        runtime_config = get_runtime_config()
+    # Create new recognizer only if not cached
+    logger.info("Creating new recognizer instance (not cached)")
+    from facecv.config import get_settings, get_runtime_config
+    
+    settings = get_settings()
+    runtime_config = get_runtime_config()
+    
+    # Use standardized database configuration
+    face_db = get_default_database()
+    
+    arcface_enabled = runtime_config.get('arcface_enabled', 
+                                       getattr(settings, 'arcface_enabled', False))
+    
+    # Check if ArcFace is enabled
+    if arcface_enabled:
+        # Use dedicated ArcFace recognizer
+        logger.info("Initializing dedicated ArcFace recognizer...")
         
-        # Use standardized database configuration
-        face_db = get_default_database()
+        det_size = tuple(runtime_config.get('insightface_det_size', 
+                                          getattr(settings, 'insightface_det_size', [640, 640])))
+        det_thresh = runtime_config.get('insightface_det_thresh', 
+                                      getattr(settings, 'insightface_det_thresh', 0.5))
+        similarity_threshold = runtime_config.get('insightface_similarity_thresh', 
+                                                getattr(settings, 'insightface_similarity_thresh', 0.35))
         
-        arcface_enabled = runtime_config.get('arcface_enabled', 
-                                           getattr(settings, 'arcface_enabled', False))
+        # Auto-select ArcFace model based on backbone preference
+        backbone = runtime_config.get('arcface_backbone', 
+                                    getattr(settings, 'arcface_backbone', 'resnet50'))
         
-        # Check if ArcFace is enabled
-        if arcface_enabled:
-            # Use dedicated ArcFace recognizer
-            logger.info("Initializing dedicated ArcFace recognizer...")
-            
-            det_size = tuple(runtime_config.get('insightface_det_size', 
-                                              getattr(settings, 'insightface_det_size', [640, 640])))
-            det_thresh = runtime_config.get('insightface_det_thresh', 
-                                          getattr(settings, 'insightface_det_thresh', 0.5))
-            similarity_threshold = runtime_config.get('insightface_similarity_thresh', 
-                                                    getattr(settings, 'insightface_similarity_thresh', 0.35))
-            
-            # Auto-select ArcFace model based on backbone preference
-            backbone = runtime_config.get('arcface_backbone', 
-                                        getattr(settings, 'arcface_backbone', 'resnet50'))
-            
-            if backbone == 'mobilefacenet':
-                model_name = 'buffalo_s_mobilefacenet'
-            else:
-                model_name = 'buffalo_l_resnet50'  # Default to ResNet50
-            
-            _recognizer = ArcFaceRecognizer(
-                face_db=face_db,
-                model_name=model_name,
-                similarity_threshold=similarity_threshold,
-                det_thresh=det_thresh,
-                det_size=det_size,
-                enable_detection=True
-            )
-            
-            logger.info(f"ArcFace recognizer initialized:")
-            logger.info(f"  Model: {model_name}")
-            logger.info(f"  Backbone: {backbone}")
-            logger.info(f"  Dataset: {runtime_config.get('arcface_dataset', getattr(settings, 'arcface_dataset', 'webface600k'))}")
-            logger.info(f"  Embedding Size: {runtime_config.get('arcface_embedding_size', getattr(settings, 'arcface_embedding_size', 512))}")
-            
+        if backbone == 'mobilefacenet':
+            model_name = 'buffalo_s_mobilefacenet'
         else:
-            # Use traditional buffalo models
-            logger.info("Initializing Real InsightFace recognizer...")
-            
-            model_pack = runtime_config.get('insightface_model_pack', 
-                                          getattr(settings, 'insightface_model_pack', 'buffalo_l'))
-            det_size = tuple(runtime_config.get('insightface_det_size', 
+            model_name = 'buffalo_l_resnet50'  # Default to ResNet50
+        
+        _recognizer = ArcFaceRecognizer(
+            face_db=face_db,
+            model_name=model_name,
+            similarity_threshold=similarity_threshold,
+            det_thresh=det_thresh,
+            det_size=det_size,
+            enable_detection=True
+        )
+        
+        logger.info(f"ArcFace recognizer initialized:")
+        logger.info(f"  Model: {model_name}")
+        logger.info(f"  Backbone: {backbone}")
+        logger.info(f"  Dataset: {runtime_config.get('arcface_dataset', getattr(settings, 'arcface_dataset', 'webface600k'))}")
+        logger.info(f"  Embedding Size: {runtime_config.get('arcface_embedding_size', getattr(settings, 'arcface_embedding_size', 512))}")
+        
+    else:
+        # Use traditional buffalo models
+        logger.info("Initializing Real InsightFace recognizer...")
+        
+        model_pack = runtime_config.get('insightface_model_pack', 
+                                      getattr(settings, 'insightface_model_pack', 'buffalo_l'))
+        det_size = tuple(runtime_config.get('insightface_det_size', 
                                               getattr(settings, 'insightface_det_size', [640, 640])))
-            det_thresh = runtime_config.get('insightface_det_thresh', 
-                                          getattr(settings, 'insightface_det_thresh', 0.5))
-            similarity_threshold = runtime_config.get('insightface_similarity_thresh', 
-                                                    getattr(settings, 'insightface_similarity_thresh', 0.35))
-            enable_emotion = runtime_config.get('enable_emotion', 
-                                              getattr(settings, 'insightface_enable_emotion', True))
-            enable_mask = runtime_config.get('enable_mask', 
-                                           getattr(settings, 'insightface_enable_mask', True))
-            prefer_gpu = runtime_config.get('prefer_gpu', 
-                                          getattr(settings, 'insightface_prefer_gpu', True))
-            
-            # Use Real InsightFace recognizer with configurable parameters
-            _recognizer = RealInsightFaceRecognizer(
+        det_thresh = runtime_config.get('insightface_det_thresh', 
+                                      getattr(settings, 'insightface_det_thresh', 0.5))
+        similarity_threshold = runtime_config.get('insightface_similarity_thresh', 
+                                                getattr(settings, 'insightface_similarity_thresh', 0.35))
+        enable_emotion = runtime_config.get('enable_emotion', 
+                                          getattr(settings, 'insightface_enable_emotion', True))
+        enable_mask = runtime_config.get('enable_mask', 
+                                       getattr(settings, 'insightface_enable_mask', True))
+        prefer_gpu = runtime_config.get('prefer_gpu', 
+                                      getattr(settings, 'insightface_prefer_gpu', True))
+        
+        # Use Real InsightFace recognizer with configurable parameters
+        _recognizer = RealInsightFaceRecognizer(
                 face_db=face_db,
                 model_pack=model_pack,
                 similarity_threshold=similarity_threshold,
@@ -121,81 +136,18 @@ def get_recognizer():
                 prefer_gpu=prefer_gpu
             )
             
-            logger.info(f"  Detection Size: {det_size}")
-            logger.info(f"  Detection Threshold: {det_thresh}")
-            logger.info(f"  Similarity Threshold: {similarity_threshold}")
-            logger.info(f"  GPU Acceleration: {prefer_gpu}")
-            logger.info(f"  Emotion Recognition: {enable_emotion}")
-            logger.info(f"  Mask Detection: {enable_mask}")
-        
-        logger.info(f"  Database: {face_db.__class__.__name__}")
-        logger.info(f"  Recognizer Type: {'ArcFace' if arcface_enabled else 'RealInsightFace'}")
+        logger.info(f"  Detection Size: {det_size}")
+        logger.info(f"  Detection Threshold: {det_thresh}")
+        logger.info(f"  Similarity Threshold: {similarity_threshold}")
+        logger.info(f"  GPU Acceleration: {prefer_gpu}")
+        logger.info(f"  Emotion Recognition: {enable_emotion}")
+        logger.info(f"  Mask Detection: {enable_mask}")
+    
+    logger.info(f"  Database: {face_db.__class__.__name__}")
+    logger.info(f"  Recognizer Type: {'ArcFace' if arcface_enabled else 'RealInsightFace'}")
     return _recognizer
 
 # ==================== Model Management Endpoints ====================
-
-@router.post("/models/switch", summary="切换模型类型")
-async def switch_model_type(
-    enable_arcface: bool = Form(..., description="是否启用ArcFace专用模型"),
-    arcface_backbone: Optional[str] = Form("resnet50", description="ArcFace骨干网络 (resnet50/mobilefacenet)")
-):
-    """
-    切换模型类型 (ArcFace vs Buffalo)
-    
-    此接口允许在运行时切换模型类型，支持：
-    1. 启用ArcFace专用模型 (enable_arcface=True)
-    2. 使用传统Buffalo模型 (enable_arcface=False)
-    
-    **参数:**
-    - enable_arcface `bool`: 是否启用ArcFace专用模型
-    - arcface_backbone `str`: ArcFace骨干网络类型 (仅当enable_arcface=True时有效)
-    
-    **返回:**
-    切换结果信息，包含新模型的详细配置
-    """
-    global _recognizer
-    
-    try:
-        # Clear current recognizer to force reload
-        _recognizer = None
-        
-        from facecv.config import get_runtime_config, get_settings
-        
-        # 获取当前设置
-        settings = get_settings()
-        runtime_config = get_runtime_config()
-        
-        runtime_config.set("arcface_enabled", enable_arcface)
-        if enable_arcface and arcface_backbone:
-            runtime_config.set("arcface_backbone", arcface_backbone)
-        
-        # Get new recognizer
-        new_recognizer = get_recognizer()
-        
-        # Get model info
-        model_info = new_recognizer.get_model_info()
-        
-        return {
-            "success": True,
-            "message": f"Successfully switched to {'ArcFace' if enable_arcface else 'Buffalo'} model",
-            "model_type": "ArcFace" if enable_arcface else "Buffalo", 
-            "model_info": model_info,
-            "configuration": {
-                "arcface_enabled": enable_arcface,
-                "backbone": arcface_backbone if enable_arcface else runtime_config.get("insightface_model_pack"),
-                "similarity_threshold": runtime_config.get("insightface_similarity_thresh"),
-                "detection_threshold": runtime_config.get("insightface_det_thresh")
-            }
-        }
-        
-    except Exception as e:
-        logger.error(f"Model switching failed: {e}")
-        return {
-            "success": False,
-            "message": f"Failed to switch model: {str(e)}",
-            "error": str(e)
-        }
-
 @router.get("/models/available", summary="获取可用模型列表")
 async def get_available_models():
     """
@@ -385,11 +337,9 @@ async def detect_faces(
             logger.info(f"Resizing image from {h}x{w} to {new_h}x{new_w}")
             image = cv2.resize(image, (new_w, new_h))
         
-        # Get the recognizer - use smaller model for better performance
-        from facecv.models.model_pool import get_model_recognizer
-        actual_model = "buffalo_s"  # Use smaller model for better performance
-        recognizer = get_model_recognizer(actual_model, "detect")
-        logger.info(f"Using recognizer: {type(recognizer).__name__} with model {actual_model}")
+        # Get the cached recognizer
+        recognizer = get_recognizer()
+        logger.info(f"Using cached recognizer: {type(recognizer).__name__}")
         
         faces = recognizer.detect_faces(image)
         logger.info(f"Detected {len(faces)} faces")
@@ -398,55 +348,12 @@ async def detect_faces(
         filtered_faces = [f for f in faces if f.confidence >= min_confidence]
         logger.info(f"Filtered to {len(filtered_faces)} faces with confidence >= {min_confidence}")
         
+        # Ensure all required fields are set for detection (no recognition)
         for face in filtered_faces:
             if not hasattr(face, 'id') or not face.id:
                 face.id = str(uuid.uuid4())
-            if not hasattr(face, 'name') or not face.name:
-                face.name = "Unknown"
-            if not hasattr(face, 'similarity') or face.similarity is None:
-                face.similarity = 0.0
             if not hasattr(face, 'quality_score') or face.quality_score is None:
                 face.quality_score = 1.0
-        
-        if filtered_faces:
-            try:
-                from facecv.database.factory import create_face_database
-                face_db = create_face_database('hybrid')
-                logger.info(f"Created hybrid face database: {type(face_db).__name__}")
-                
-                for face in filtered_faces:
-                    x1, y1, x2, y2 = face.bbox
-                    if x1 < 0: x1 = 0
-                    if y1 < 0: y1 = 0
-                    if x2 > image.shape[1]: x2 = image.shape[1]
-                    if y2 > image.shape[0]: y2 = image.shape[0]
-                    
-                    if x2 <= x1 or y2 <= y1:
-                        logger.warning(f"Invalid bbox: {face.bbox}, skipping recognition")
-                        continue
-                    
-                    face_img = image[y1:y2, x1:x2]
-                    
-                    embedding = recognizer.extract_embedding(face_img)
-                    if embedding is None:
-                        logger.warning(f"Failed to extract embedding for face at {face.bbox}")
-                        continue
-                    
-                    similar_faces = face_db.query_faces_by_embedding(embedding, top_k=1, threshold=0.35)
-                    
-                    if similar_faces and similar_faces[0].get('similarity', 0) >= 0.35:
-                        match = similar_faces[0]
-                        face.id = match.get('id', face.id)
-                        face.name = match.get('name', "Unknown")
-                        face.similarity = match.get('similarity', 0.0)
-                        logger.info(f"Match found: {face.name} (ID: {face.id}, similarity: {face.similarity})")
-                    else:
-                        logger.info(f"No match found for face at {face.bbox}")
-                
-            except Exception as e:
-                logger.error(f"Error during recognition in detect endpoint: {e}")
-                import traceback
-                logger.error(traceback.format_exc())
         
         response_faces = []
         for face in filtered_faces:
@@ -557,15 +464,9 @@ async def recognize_faces(
             logger.info(f"Resizing image from {h}x{w} to {new_h}x{new_w}")
             image = cv2.resize(image, (new_w, new_h))
         
-        from facecv.database.factory import create_face_database
-        face_db = create_face_database('hybrid')
-        logger.info(f"Created hybrid face database: {type(face_db).__name__}")
-        
-        # Get the recognizer with the hybrid database
-        from facecv.models.model_pool import get_model_recognizer
-        actual_model = "buffalo_s"  # Use smaller model for better performance
-        recognizer = get_model_recognizer(actual_model, "recognize", face_db=face_db)
-        logger.info(f"Using recognizer: {type(recognizer).__name__} with model {actual_model}")
+        # Get the cached recognizer
+        recognizer = get_recognizer()
+        logger.info(f"Using cached recognizer: {type(recognizer).__name__}")
         
         results = recognizer.recognize(image, threshold=threshold)
         logger.info(f"Recognized {len(results)} faces")
@@ -636,11 +537,23 @@ async def register_face(
         if employee_id:
             face_metadata["employee_id"] = employee_id
         
-        # Register faces
+        # First detect faces to check how many are present
+        faces = recognizer.detect_faces(image)
+        
+        if not faces:
+            raise HTTPException(status_code=400, detail="No faces detected in the image")
+        
+        if len(faces) > 1:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Multiple faces detected ({len(faces)} faces). Please provide an image with only one clear face for registration."
+            )
+        
+        # Register the single face
         face_ids = recognizer.register(image=image, name=name, metadata=face_metadata)
         
         if not face_ids:
-            raise HTTPException(status_code=400, detail="No faces detected for registration")
+            raise HTTPException(status_code=400, detail="Failed to register face")
         
         logger.info(f"Successfully registered {len(face_ids)} face(s) for {name}")
         
@@ -648,7 +561,9 @@ async def register_face(
             success=True,
             message=f"Successfully registered {len(face_ids)} face(s)",
             person_name=name,
-            face_id=face_ids[0] if face_ids else None
+            face_id=face_ids[0] if len(face_ids) == 1 else None,
+            face_ids=face_ids if len(face_ids) > 1 else None,
+            face_count=len(face_ids)
         )
         
     except HTTPException:
@@ -689,7 +604,11 @@ async def list_faces(
     recognizer = get_recognizer()
     
     try:
-        faces = recognizer.list_faces(name)
+        # Get faces directly from the database
+        if name:
+            faces = recognizer.face_db.search_by_name(name)
+        else:
+            faces = recognizer.face_db.get_all_faces()
         
         # Limit results and clean data for JSON serialization
         limited_faces = faces[:limit]
@@ -771,6 +690,7 @@ async def delete_faces_by_name(name: str):
     **返回:**
     包含以下内容的对象:
     - message `str`: 包含人员姓名的成功确认消息
+    - deleted_count `int`: 删除的人脸数量
     
     **错误:**
     - 404: 未找到指定姓名的人脸
@@ -779,43 +699,21 @@ async def delete_faces_by_name(name: str):
     recognizer = get_recognizer()
     
     try:
-        success = recognizer.delete(name=name)
+        deleted_count = recognizer.delete(name=name)
         
-        if not success:
+        if deleted_count == 0:
             raise HTTPException(status_code=404, detail="No faces found for this name")
         
-        return {"message": f"Successfully deleted all faces for {name}"}
+        return {
+            "message": f"Successfully deleted all faces for {name}",
+            "deleted_count": deleted_count
+        }
         
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Error deleting faces by name: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to delete faces: {str(e)}")
-
-@router.get("/faces/count", summary="获取人脸数量")
-async def get_face_count():
-    """
-    获取数据库中人脸的总数
-    
-    此接口返回数据库中已注册人脸的总数。
-    对于监控数据库大小和使用统计很有用。
-    
-    **返回:**
-    包含以下内容的对象:
-    - total_faces `int`: 数据库中已注册人脸的总数
-    
-    **错误:**
-    - 500: 数据库查询错误
-    """
-    recognizer = get_recognizer()
-    
-    try:
-        count = recognizer.get_face_count()
-        return {"total_faces": count}
-        
-    except Exception as e:
-        logger.error(f"Error getting face count: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to get face count: {str(e)}")
 
 # ==================== Utility Endpoints ====================
 
@@ -863,20 +761,20 @@ async def get_model_info():
         
         return {
             "status": "active",
-            "initialized": model_info.get("initialized", False),
+            "initialized": recognizer.app is not None,
             "model_pack": model_info.get("model_pack", "buffalo_l"),
             "similarity_threshold": recognizer.similarity_threshold,
             "detection_threshold": recognizer.det_thresh,
             "detection_size": list(recognizer.det_size),
             "face_database_connected": recognizer.face_db is not None,
-            "face_count": recognizer.get_face_count() if recognizer.face_db else 0,
-            "insightface_available": model_info.get("insightface_available", False),
+            "face_count": recognizer.face_db.get_face_count() if recognizer.face_db else 0,
+            "insightface_available": True,
             
             # 扩展配置信息
             "configuration": {
                 "emotion_recognition": recognizer.enable_emotion,
                 "mask_detection": recognizer.enable_mask_detection,
-                "prefer_gpu": recognizer.prefer_gpu,
+                "prefer_gpu": getattr(recognizer, 'prefer_gpu', True),
                 "model_device": getattr(settings, 'model_device', 'auto'),
                 "backend": getattr(settings, 'model_backend', 'insightface')
             },
@@ -893,13 +791,13 @@ async def get_model_info():
             "database": {
                 "type": recognizer.face_db.__class__.__name__ if recognizer.face_db else "None",
                 "connected": recognizer.face_db is not None,
-                "face_count": recognizer.get_face_count() if recognizer.face_db else 0
+                "face_count": recognizer.face_db.get_face_count() if recognizer.face_db else 0
             },
             
             # 性能建议
             "recommendations": {
-                "current_setup": "生产就绪" if model_info.get("initialized", False) and model_info.get("insightface_available", False) else "需要安装InsightFace",
-                "gpu_recommendation": "建议使用GPU加速以获得更好性能" if not gpu_available and recognizer.prefer_gpu else "GPU配置正常",
+                "current_setup": "生产就绪" if recognizer.app is not None else "需要安装InsightFace",
+                "gpu_recommendation": "建议使用GPU加速以获得更好性能" if not gpu_available and getattr(recognizer, 'prefer_gpu', True) else "GPU配置正常",
                 "model_recommendation": f"当前使用 {model_info.get('model_pack', 'buffalo_l')} - 适合生产环境" if model_info.get('model_pack', 'buffalo_l') == 'buffalo_l' else f"当前使用 {model_info.get('model_pack', 'buffalo_l')} - 考虑使用buffalo_l获得更高精度"
             }
         }
@@ -908,76 +806,75 @@ async def get_model_info():
         logger.error(f"Error getting model info: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to get model info: {str(e)}")
 
-@router.post("/models/select", summary="选择模型")
-async def select_model(
-    model: str = Query(..., description="要选择的模型名称: buffalo_l, buffalo_m, buffalo_s, antelopev2")
-):
+@router.get("/status", summary="详细状态检查")
+async def detailed_status():
     """
-    动态切换InsightFace模型
+    InsightFace服务详细状态检查
     
-    此接口允许在运行时切换使用的InsightFace模型包，
-    支持在精度和速度之间进行权衡。
-    
-    **参数:**
-    - model `str`: 要选择的模型名称
-      - buffalo_l: 最佳精度 (推荐生产环境)
-      - buffalo_m: 平衡精度和速度
-      - buffalo_s: 速度优先
-      - antelopev2: 最高精度
+    提供详细的状态信息，包括智能模型池和数据库状态。
+    显示当前加载的模型、使用统计和最后API调用信息。
     
     **返回:**
-    包含以下内容的对象:
-    - success `bool`: 切换是否成功
-    - message `str`: 状态消息
-    - previous_model `str`: 之前使用的模型
-    - current_model `str`: 当前使用的模型
+    - status: 整体状态
+    - service: 服务名称
+    - model_pool: 模型池状态
+    - loaded_models: 当前加载的模型列表
+    - database_status: 数据库状态
+    - memory_usage: 内存使用情况
+    - timestamp: 时间戳
     """
-    global _recognizer
-    
-    # Validate model choice
-    valid_models = ["buffalo_l", "buffalo_m", "buffalo_s", "antelopev2"]
-    if model not in valid_models:
-        raise HTTPException(
-            status_code=400, 
-            detail=f"Invalid model '{model}'. Valid choices: {', '.join(valid_models)}"
-        )
-    
     try:
-        from facecv.config import get_runtime_config
+        recognizer = get_recognizer()
         
-        runtime_config = get_runtime_config()
+        # 获取模型信息
+        model_info = recognizer.get_model_info()
         
-        previous_model = runtime_config.get('insightface_model_pack', 'buffalo_l')
+        # 获取数据库状态
+        face_count = 0
+        db_status = "disconnected"
+        try:
+            faces = recognizer.list_all_faces()
+            face_count = len(faces)
+            db_status = "connected"
+        except:
+            pass
         
-        if previous_model == model:
-            return {
-                "success": True,
-                "message": f"Model '{model}' is already active",
-                "previous_model": previous_model,
-                "current_model": model
-            }
-        
-        runtime_config.set("insightface_model_pack", model)
-        
-        # Reset recognizer to force reinitialization with new model
-        _recognizer = None
-        
-        # Initialize with new model
-        new_recognizer = get_recognizer()
-        
-        logger.info(f"Successfully switched model from {previous_model} to {model}")
-        
-        return {
-            "success": True,
-            "message": f"Successfully switched from {previous_model} to {model}",
-            "previous_model": previous_model,
-            "current_model": model,
-            "model_info": new_recognizer.get_model_info()
+        # 构建详细状态
+        status_info = {
+            "status": "healthy",
+            "service": "InsightFace API",
+            "model_pool": {
+                "initialized": recognizer.app is not None,
+                "model_pack": recognizer.model_pack,
+                "detection_threshold": recognizer.det_thresh,
+                "similarity_threshold": recognizer.similarity_threshold
+            },
+            "loaded_models": [
+                getattr(model, 'taskname', str(model)) for model in recognizer.app.models
+            ] if recognizer.app and hasattr(recognizer.app, 'models') else [],
+            "database_status": {
+                "connected": db_status == "connected",
+                "type": recognizer.face_db.__class__.__name__ if recognizer.face_db else "None",
+                "face_count": face_count
+            },
+            "memory_usage": {
+                "gpu_enabled": getattr(recognizer, 'prefer_gpu', True),
+                "emotion_model": getattr(recognizer, 'enable_emotion', True),
+                "mask_detection": getattr(recognizer, 'enable_mask_detection', True)
+            },
+            "timestamp": str(datetime.now())
         }
         
+        return status_info
+        
     except Exception as e:
-        logger.error(f"Error switching model to {model}: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to switch model: {str(e)}")
+        logger.error(f"Status check failed: {e}")
+        return {
+            "status": "unhealthy",
+            "service": "InsightFace API",
+            "error": str(e),
+            "timestamp": str(datetime.now())
+        }
 
 @router.get("/health", summary="健康检查")
 async def health_check():
@@ -1005,7 +902,7 @@ async def health_check():
         return {
             "status": "healthy",
             "service": "Real InsightFace API",
-            "initialized": recognizer.initialized,
+            "initialized": recognizer.app is not None,
             "model_pack": recognizer.model_pack,
             "database_connected": recognizer.face_db is not None,
             "timestamp": str(datetime.now())
@@ -1014,3 +911,563 @@ async def health_check():
     except Exception as e:
         logger.error(f"Health check failed: {e}")
         raise HTTPException(status_code=500, detail=f"Health check failed: {str(e)}")
+
+# ==================== 视频流处理端点 ====================
+
+@router.post("/stream/process", summary="处理视频流")
+async def process_video_stream(
+    source: str = Form(..., description="视频源 (0 表示摄像头, RTSP URL 表示网络流)"),
+    duration: Optional[int] = Form(None, description="处理时长(秒)"),
+    skip_frames: int = Form(1, description="跳帧数"),
+    show_preview: bool = Form(False, description="是否显示预览")
+):
+    """
+    处理视频流进行人脸识别
+    
+    支持本地摄像头和 RTSP 网络流。
+    
+    **参数:**
+    - source: 视频源 (0/1/2 表示本地摄像头索引, rtsp:// 开头表示网络流)
+    - duration: 处理时长，None 表示持续处理
+    - skip_frames: 每隔几帧处理一次 (1=每帧, 2=隔帧)
+    - show_preview: 是否显示预览窗口 (仅本地有效)
+    
+    **返回:**
+    处理结果包含检测到的人脸信息
+    """
+    try:
+        recognizer = get_recognizer()
+        
+        # 尝试将 source 转换为整数（摄像头索引）
+        try:
+            source_int = int(source)
+            cap = cv2.VideoCapture(source_int)
+        except ValueError:
+            # RTSP 或文件路径
+            cap = cv2.VideoCapture(source)
+        
+        if not cap.isOpened():
+            raise HTTPException(status_code=400, detail=f"无法打开视频源: {source}")
+        
+        results = {
+            "source": source,
+            "status": "processing",
+            "total_faces": 0,
+            "unique_persons": set(),
+            "detections": []
+        }
+        
+        frame_count = 0
+        start_time = datetime.now()
+        
+        while True:
+            ret, frame = cap.read()
+            if not ret:
+                break
+            
+            # 跳帧处理
+            if frame_count % skip_frames != 0:
+                frame_count += 1
+                continue
+            
+            # 检测和识别人脸
+            faces = recognizer.detect_faces(frame)
+            
+            for face in faces:
+                # 识别人脸
+                recognition_results = recognizer.recognize(frame, threshold=0.35)
+                
+                for result in recognition_results:
+                    results["total_faces"] += 1
+                    if result.name != "Unknown":
+                        results["unique_persons"].add(result.name)
+                    
+                    results["detections"].append({
+                        "timestamp": str(datetime.now()),
+                        "name": result.name,
+                        "confidence": result.confidence,
+                        "bbox": result.bbox
+                    })
+            
+            # 显示预览
+            if show_preview:
+                cv2.imshow("Face Recognition", frame)
+                if cv2.waitKey(1) & 0xFF == ord('q'):
+                    break
+            
+            # 检查是否超时
+            if duration and (datetime.now() - start_time).seconds >= duration:
+                break
+            
+            frame_count += 1
+        
+        cap.release()
+        if show_preview:
+            cv2.destroyAllWindows()
+        
+        results["status"] = "completed"
+        results["unique_persons"] = list(results["unique_persons"])
+        results["duration"] = (datetime.now() - start_time).seconds
+        
+        return results
+        
+    except Exception as e:
+        logger.error(f"视频流处理失败: {e}")
+        raise HTTPException(status_code=500, detail=f"视频流处理失败: {str(e)}")
+
+@router.get("/stream/sources", summary="获取可用视频源")
+async def get_video_sources():
+    """
+    获取系统可用的视频源列表
+    
+    **返回:**
+    - cameras: 本地摄像头列表
+    - sample_rtsp: RTSP URL 示例
+    """
+    cameras = []
+    
+    # 检测本地摄像头
+    for i in range(3):  # 检查前3个摄像头
+        cap = cv2.VideoCapture(i)
+        if cap.isOpened():
+            cameras.append({
+                "index": i,
+                "name": f"摄像头 {i}",
+                "available": True
+            })
+            cap.release()
+    
+    return {
+        "cameras": cameras,
+        "sample_rtsp": [
+            "rtsp://username:password@192.168.1.100:554/stream1",
+            "rtsp://192.168.1.100:8554/live.sdp"
+        ]
+    }
+
+# ==================== New Stream Processing Endpoints ====================
+
+# Global dictionary to track active streams
+_active_streams = {}
+
+async def process_stream_with_webhook(
+    stream_id: str,
+    source: Union[int, str],
+    webhook_url: str,
+    recognizer,
+    request_params: Dict[str, Any],
+    event_type: str = "face_recognized"
+):
+    """Background task to process video stream and send results to webhook"""
+    try:
+        # Configure webhook
+        webhook_config = WebhookConfig(
+            url=webhook_url,
+            timeout=30,
+            retry_count=3,
+            retry_delay=1,
+            batch_size=10,
+            batch_timeout=1.0
+        )
+        webhook_manager.add_webhook(stream_id, webhook_config)
+        
+        # Start webhook manager if not running
+        if not webhook_manager.running:
+            webhook_manager.start()
+        
+        # Configure stream processor
+        config = StreamConfig(
+            skip_frames=request_params.get('skip_frames', 1),
+            show_preview=False,  # Never show preview in API mode
+            enable_tracking=True
+        )
+        
+        processor = VideoStreamProcessor(recognizer, config)
+        
+        # Open video source
+        cap = cv2.VideoCapture(source)
+        if not cap.isOpened():
+            raise Exception(f"Cannot open video source: {source}")
+        
+        _active_streams[stream_id] = {
+            "processor": processor,
+            "cap": cap,
+            "status": "processing"
+        }
+        
+        frame_count = 0
+        
+        while stream_id in _active_streams:
+            ret, frame = cap.read()
+            if not ret:
+                break
+            
+            # Skip frames
+            if frame_count % request_params.get('skip_frames', 1) != 0:
+                frame_count += 1
+                continue
+            
+            # Process frame based on event type
+            if event_type == "face_recognized":
+                # Recognition mode
+                results = recognizer.recognize(frame, threshold=request_params.get('threshold', 0.35))
+                
+                if results:
+                    # Prepare webhook payload
+                    faces_data = []
+                    for result in results:
+                        face_dict = {
+                            "name": result.name,
+                            "confidence": result.confidence,
+                            "bbox": result.bbox,
+                            "id": getattr(result, 'id', str(uuid.uuid4())),
+                            "similarity": getattr(result, 'similarity', result.confidence)
+                        }
+                        faces_data.append(face_dict)
+                    
+                    # Encode frame if requested
+                    frame_base64 = None
+                    if request_params.get('return_frame', False):
+                        # Draw bboxes if requested
+                        if request_params.get('draw_bbox', True):
+                            for result in results:
+                                x1, y1, x2, y2 = result.bbox
+                                cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                                label = f"{result.name}: {result.confidence:.2f}"
+                                cv2.putText(frame, label, (x1, y1-10), 
+                                          cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+                        
+                        _, buffer = cv2.imencode('.jpg', frame)
+                        frame_base64 = base64.b64encode(buffer).decode('utf-8')
+                    
+                    # Send to webhook
+                    send_recognition_event(
+                        camera_id=str(source),
+                        recognized_faces=faces_data,
+                        metadata={
+                            "stream_id": stream_id,
+                            "frame_count": frame_count,
+                            "timestamp": datetime.now().isoformat(),
+                            "frame_base64": frame_base64
+                        }
+                    )
+                    
+            elif event_type == "face_verified":
+                # Verification mode
+                target_name = request_params.get('target_name')
+                verification_threshold = request_params.get('verification_threshold', 0.4)
+                
+                results = recognizer.recognize(frame, threshold=verification_threshold)
+                
+                verified_faces = []
+                non_verified_faces = []
+                
+                for result in results:
+                    if result.name == target_name and result.confidence >= verification_threshold:
+                        verified_faces.append(result)
+                    else:
+                        non_verified_faces.append(result)
+                
+                # Send verification results
+                if verified_faces or (non_verified_faces and request_params.get('alert_on_mismatch', False)):
+                    faces_data = []
+                    for result in (verified_faces + non_verified_faces):
+                        face_dict = {
+                            "name": result.name,
+                            "confidence": result.confidence,
+                            "bbox": result.bbox,
+                            "verified": result.name == target_name and result.confidence >= verification_threshold,
+                            "target_name": target_name
+                        }
+                        faces_data.append(face_dict)
+                    
+                    # Encode frame if requested
+                    frame_base64 = None
+                    if request_params.get('return_frame', False):
+                        if request_params.get('draw_bbox', True):
+                            for result in verified_faces:
+                                x1, y1, x2, y2 = result.bbox
+                                cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                                cv2.putText(frame, f"Verified: {target_name}", (x1, y1-10), 
+                                          cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+                            
+                            for result in non_verified_faces:
+                                x1, y1, x2, y2 = result.bbox
+                                cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 0, 255), 2)
+                                cv2.putText(frame, f"Not {target_name}", (x1, y1-10), 
+                                          cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
+                        
+                        _, buffer = cv2.imencode('.jpg', frame)
+                        frame_base64 = base64.b64encode(buffer).decode('utf-8')
+                    
+                    send_recognition_event(
+                        camera_id=str(source),
+                        recognized_faces=faces_data,
+                        metadata={
+                            "stream_id": stream_id,
+                            "event_type": "face_verified",
+                            "target_name": target_name,
+                            "frame_count": frame_count,
+                            "timestamp": datetime.now().isoformat(),
+                            "frame_base64": frame_base64
+                        }
+                    )
+            
+            frame_count += 1
+        
+        # Cleanup
+        cap.release()
+        webhook_manager.remove_webhook(stream_id)
+        if stream_id in _active_streams:
+            _active_streams[stream_id]["status"] = "completed"
+            del _active_streams[stream_id]
+            
+    except Exception as e:
+        logger.error(f"Stream processing error: {e}")
+        if stream_id in _active_streams:
+            _active_streams[stream_id]["status"] = "error"
+            del _active_streams[stream_id]
+        webhook_manager.remove_webhook(stream_id)
+
+
+@router.post(
+    "/stream/process_recognition",
+    response_model=StreamProcessResponse,
+    summary="视频流人脸识别",
+    description="处理视频流进行实时人脸识别并通过Webhook发送结果"
+)
+async def process_stream_recognition(
+    request: StreamRecognitionRequest,
+    background_tasks: BackgroundTasks
+):
+    """
+    处理视频流进行实时人脸识别
+    
+    此接口启动一个后台任务来处理视频流，检测并识别人脸，
+    然后通过Webhook URL实时发送识别结果。
+    
+    **参数:**
+    - camera_id: 摄像头索引(0,1,2...)或RTSP URL
+    - webhook_url: 接收识别结果的Webhook URL
+    - skip_frames: 跳帧数，1=每帧处理，2=隔帧处理
+    - model: 使用的模型(默认buffalo_l)
+    - use_scrfd: 是否使用SCRFD检测器
+    - return_frame: 是否在Webhook中返回处理后的帧图像
+    - draw_bbox: 是否在返回帧上绘制边界框
+    - threshold: 识别阈值
+    - return_all_candidates: 是否返回所有候选人
+    - max_candidates: 最大候选人数
+    
+    **Webhook数据格式:**
+    ```json
+    {
+        "stream_id": "uuid",
+        "timestamp": "2024-01-15T10:00:00",
+        "camera_id": "0",
+        "event_type": "face_recognized",
+        "faces": [
+            {
+                "name": "张三",
+                "confidence": 0.95,
+                "bbox": [100, 100, 200, 200],
+                "id": "face_id",
+                "similarity": 0.95
+            }
+        ],
+        "frame_base64": "base64_encoded_image_if_requested",
+        "metadata": {
+            "frame_count": 150,
+            "stream_id": "uuid"
+        }
+    }
+    ```
+    """
+    # Generate stream ID
+    stream_id = str(uuid.uuid4())
+    
+    # Convert camera_id to proper format
+    source = request.camera_id
+    if isinstance(source, str) and source.isdigit():
+        source = int(source)
+    
+    # Prepare request parameters
+    request_params = {
+        "skip_frames": request.skip_frames,
+        "threshold": request.threshold,
+        "return_frame": request.return_frame,
+        "draw_bbox": request.draw_bbox,
+        "return_all_candidates": request.return_all_candidates,
+        "max_candidates": request.max_candidates
+    }
+    
+    # Get recognizer instance
+    recognizer = get_recognizer()
+    
+    # Start background processing
+    background_tasks.add_task(
+        process_stream_with_webhook,
+        stream_id=stream_id,
+        source=source,
+        webhook_url=request.webhook_url,
+        recognizer=recognizer,
+        request_params=request_params,
+        event_type="face_recognized"
+    )
+    
+    return StreamProcessResponse(
+        stream_id=stream_id,
+        status="started",
+        message=f"Stream processing started for camera {request.camera_id}",
+        camera_id=request.camera_id,
+        webhook_url=request.webhook_url,
+        start_time=datetime.now().isoformat()
+    )
+
+
+@router.post(
+    "/stream/process_verification",
+    response_model=StreamProcessResponse,
+    summary="视频流人脸验证",
+    description="处理视频流进行特定人员的人脸验证并通过Webhook发送结果"
+)
+async def process_stream_verification(
+    request: StreamVerificationRequest,
+    background_tasks: BackgroundTasks
+):
+    """
+    处理视频流进行特定人员的人脸验证
+    
+    此接口启动一个后台任务来处理视频流，验证是否为特定目标人员，
+    并通过Webhook URL实时发送验证结果。
+    
+    **参数:**
+    - camera_id: 摄像头索引(0,1,2...)或RTSP URL
+    - webhook_url: 接收验证结果的Webhook URL
+    - target_name: 目标人员姓名
+    - verification_threshold: 验证阈值
+    - alert_on_mismatch: 不匹配时是否发送警报
+    - skip_frames: 跳帧数
+    - return_frame: 是否返回处理后的帧图像
+    - draw_bbox: 是否绘制边界框
+    
+    **Webhook数据格式:**
+    ```json
+    {
+        "stream_id": "uuid",
+        "timestamp": "2024-01-15T10:00:00",
+        "camera_id": "0",
+        "event_type": "face_verified",
+        "faces": [
+            {
+                "name": "张三",
+                "confidence": 0.95,
+                "bbox": [100, 100, 200, 200],
+                "verified": true,
+                "target_name": "张三"
+            }
+        ],
+        "frame_base64": "base64_encoded_image_if_requested",
+        "metadata": {
+            "target_name": "张三",
+            "frame_count": 150
+        }
+    }
+    ```
+    """
+    # Generate stream ID
+    stream_id = str(uuid.uuid4())
+    
+    # Convert camera_id to proper format
+    source = request.camera_id
+    if isinstance(source, str) and source.isdigit():
+        source = int(source)
+    
+    # Prepare request parameters
+    request_params = {
+        "skip_frames": request.skip_frames,
+        "threshold": request.threshold,
+        "return_frame": request.return_frame,
+        "draw_bbox": request.draw_bbox,
+        "target_name": request.target_name,
+        "verification_threshold": request.verification_threshold,
+        "alert_on_mismatch": request.alert_on_mismatch
+    }
+    
+    # Get recognizer instance
+    recognizer = get_recognizer()
+    
+    # Start background processing
+    background_tasks.add_task(
+        process_stream_with_webhook,
+        stream_id=stream_id,
+        source=source,
+        webhook_url=request.webhook_url,
+        recognizer=recognizer,
+        request_params=request_params,
+        event_type="face_verified"
+    )
+    
+    return StreamProcessResponse(
+        stream_id=stream_id,
+        status="started",
+        message=f"Stream verification started for camera {request.camera_id}, target: {request.target_name}",
+        camera_id=request.camera_id,
+        webhook_url=request.webhook_url,
+        start_time=datetime.now().isoformat()
+    )
+
+
+@router.get("/stream/status/{stream_id}", summary="获取流处理状态")
+async def get_stream_status(stream_id: str):
+    """
+    获取视频流处理状态
+    
+    **参数:**
+    - stream_id: 流处理会话ID
+    
+    **返回:**
+    流处理状态信息
+    """
+    if stream_id in _active_streams:
+        return {
+            "stream_id": stream_id,
+            "status": _active_streams[stream_id]["status"],
+            "active": True
+        }
+    else:
+        return {
+            "stream_id": stream_id,
+            "status": "not_found",
+            "active": False
+        }
+
+
+@router.post("/stream/stop/{stream_id}", summary="停止流处理")
+async def stop_stream(stream_id: str):
+    """
+    停止视频流处理
+    
+    **参数:**
+    - stream_id: 流处理会话ID
+    
+    **返回:**
+    停止操作结果
+    """
+    if stream_id in _active_streams:
+        # Release resources
+        if "cap" in _active_streams[stream_id]:
+            _active_streams[stream_id]["cap"].release()
+        
+        # Remove from active streams
+        del _active_streams[stream_id]
+        
+        # Remove webhook
+        webhook_manager.remove_webhook(stream_id)
+        
+        return {
+            "stream_id": stream_id,
+            "status": "stopped",
+            "message": "Stream processing stopped successfully"
+        }
+    else:
+        raise HTTPException(status_code=404, detail="Stream not found")

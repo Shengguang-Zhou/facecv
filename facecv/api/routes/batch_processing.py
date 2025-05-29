@@ -1,4 +1,8 @@
-"""Batch Processing API Routes for InsightFace"""
+"""Batch Processing API Routes for InsightFace
+
+DEPRECATED: These batch processing endpoints are deprecated and will be removed in a future version.
+Please use the individual endpoints with proper client-side batching instead.
+"""
 
 from fastapi import APIRouter, File, UploadFile, HTTPException, Form, Query
 from typing import List, Optional, Dict, Any
@@ -10,13 +14,14 @@ import cv2
 from datetime import datetime
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
+import warnings
 
 from facecv.models.insightface.real_recognizer import RealInsightFaceRecognizer
 from facecv.schemas.face import FaceDetection, VerificationResult, RecognitionResult, FaceRegisterResponse
 from facecv.config import get_settings
 from facecv.database.sqlite_facedb import SQLiteFaceDB
 
-router = APIRouter(prefix="/api/v1/batch", tags=["Batch Processing"])
+router = APIRouter(prefix="/api/v1/batch", tags=["Batch Processing (Deprecated)"])
 logger = logging.getLogger(__name__)
 
 # Thread pool for parallel processing
@@ -67,8 +72,10 @@ async def process_upload_file(file: UploadFile) -> np.ndarray:
 
 @router.post("/detect", 
     response_model=Dict[str, List[FaceDetection]],
-    summary="批量检测人脸",
-    description="""在多张图片中同时检测人脸。
+    summary="批量检测人脸 (已弃用)",
+    description="""**⚠️ DEPRECATED**: 此接口已被弃用，将在未来版本中移除。请使用单个检测接口进行客户端批量处理。
+    
+    在多张图片中同时检测人脸。
     
     该接口支持并行处理多张图片，高效检测每张图片中的所有人脸。
     返回每张图片的检测结果，包括人脸边界框、置信度和质量分数。
@@ -82,11 +89,20 @@ async def process_upload_file(file: UploadFile) -> np.ndarray:
     **返回格式：**
     - 键：image_{序号}_{文件名}
     - 值：该图片中检测到的人脸列表
-    """)
+    """,
+    deprecated=True)
 async def batch_detect_faces(
     files: List[UploadFile] = File(..., description="多个图片文件"),
     min_confidence: float = Query(0.5, description="最小检测置信度")
 ):
+    warnings.warn(
+        "The batch detect endpoint is deprecated and will be removed in a future version. "
+        "Please use the individual detect endpoint with client-side batching.",
+        DeprecationWarning,
+        stacklevel=2
+    )
+    logger.warning("Deprecated batch detect endpoint called")
+    
     recognizer = get_recognizer()
     results = {}
     
@@ -117,8 +133,10 @@ async def batch_detect_faces(
 
 @router.post("/register", 
     response_model=Dict[str, Any],
-    summary="批量注册人脸",
-    description="""从多张图片中批量注册人脸。
+    summary="批量注册人脸 (已弃用)",
+    description="""**⚠️ DEPRECATED**: 此接口已被弃用，将在未来版本中移除。请使用单个注册接口进行客户端批量处理。
+    
+    从多张图片中批量注册人脸。
     
     该接口支持一次性注册多个人脸，每张图片对应一个人脸（建议每张图片只包含一个人脸）。
     所有注册操作并行处理，提高效率。
@@ -133,13 +151,22 @@ async def batch_detect_faces(
     - failed: 注册失败的人脸列表（包含失败原因）
     - total: 总处理数量
     - success_rate: 成功率
-    """)
+    """,
+    deprecated=True)
 async def batch_register_faces(
     files: List[UploadFile] = File(..., description="多个人脸图片"),
     names: str = Form(..., description="逗号分隔的姓名，对应图片顺序"),
     department: Optional[str] = Form(None, description="所有人脸的部门（可选）"),
     metadata: Optional[str] = Form(None, description="JSON格式的元数据（可选）")
 ):
+    warnings.warn(
+        "The batch register endpoint is deprecated and will be removed in a future version. "
+        "Please use the individual register endpoint with client-side batching.",
+        DeprecationWarning,
+        stacklevel=2
+    )
+    logger.warning("Deprecated batch register endpoint called")
+    
     recognizer = get_recognizer()
     name_list = [n.strip() for n in names.split(',')]
     
@@ -210,8 +237,10 @@ async def batch_register_faces(
 
 @router.post("/recognize", 
     response_model=Dict[str, List[RecognitionResult]],
-    summary="批量识别人脸",
-    description="""在多张图片中批量识别人脸。
+    summary="批量识别人脸 (已弃用)",
+    description="""**⚠️ DEPRECATED**: 此接口已被弃用，将在未来版本中移除。请使用单个识别接口进行客户端批量处理。
+    
+    在多张图片中批量识别人脸。
     
     该接口并行处理多张图片，识别每张图片中的所有人脸，
     并与数据库中已注册的人脸进行匹配。
@@ -225,11 +254,20 @@ async def batch_register_faces(
     **返回格式：**
     - 键：image_{序号}_{文件名}
     - 值：该图片中识别到的人脸结果列表
-    """)
+    """,
+    deprecated=True)
 async def batch_recognize_faces(
     files: List[UploadFile] = File(..., description="多个要识别人脸的图片"),
     threshold: float = Query(0.4, description="识别相似度阈值")
 ):
+    warnings.warn(
+        "The batch recognize endpoint is deprecated and will be removed in a future version. "
+        "Please use the individual recognize endpoint with client-side batching.",
+        DeprecationWarning,
+        stacklevel=2
+    )
+    logger.warning("Deprecated batch recognize endpoint called")
+    
     recognizer = get_recognizer()
     results = {}
     
@@ -257,8 +295,10 @@ async def batch_recognize_faces(
 
 @router.post("/verify", 
     response_model=List[Dict[str, Any]],
-    summary="批量验证人脸",
-    description="""批量验证多张图片中的人脸。
+    summary="批量验证人脸 (已弃用)",
+    description="""**⚠️ DEPRECATED**: 此接口已被弃用，将在未来版本中移除。请使用单个验证接口进行客户端批量处理。
+    
+    批量验证多张图片中的人脸。
     
     该接口支持批量验证，可以：
     1. **成对比对**：将所有图片分成两组进行一一对应比对
@@ -281,12 +321,21 @@ async def batch_recognize_faces(
     - confidence: 相似度置信度
     - distance: 特征向量距离
     - threshold: 使用的阈值
-    """)
+    """,
+    deprecated=True)
 async def batch_verify_faces(
     files: List[UploadFile] = File(..., description="要比对的图片文件"),
     threshold: float = Query(0.4, description="相似度阈值"),
     cross_compare: bool = Query(False, description="是否进行交叉比对（所有图片相互比对）")
 ):
+    warnings.warn(
+        "The batch verify endpoint is deprecated and will be removed in a future version. "
+        "Please use the individual verify endpoint with client-side batching.",
+        DeprecationWarning,
+        stacklevel=2
+    )
+    logger.warning("Deprecated batch verify endpoint called")
+    
     recognizer = get_recognizer()
     results = []
     
@@ -361,8 +410,10 @@ async def batch_verify_faces(
 
 @router.post("/analyze", 
     response_model=Dict[str, Any],
-    summary="批量分析人脸",
-    description="""批量分析多张图片中的人脸属性。
+    summary="批量分析人脸 (已弃用)",
+    description="""**⚠️ DEPRECATED**: 此接口已被弃用，将在未来版本中移除。请使用单个分析接口进行客户端批量处理。
+    
+    批量分析多张图片中的人脸属性。
     
     该接口检测并分析每张图片中的所有人脸，提取人脸属性信息。
     支持的属性包括：
@@ -381,11 +432,20 @@ async def batch_verify_faces(
     **返回内容：**
     - 每张图片的分析结果
     - 汇总统计（总图片数、总人脸数、平均每图人脸数）
-    """)
+    """,
+    deprecated=True)
 async def batch_analyze_faces(
     files: List[UploadFile] = File(..., description="多个要分析的图片"),
     include_embeddings: bool = Query(False, description="是否包含人脸特征向量")
 ):
+    warnings.warn(
+        "The batch analyze endpoint is deprecated and will be removed in a future version. "
+        "Please use the individual analyze endpoint with client-side batching.",
+        DeprecationWarning,
+        stacklevel=2
+    )
+    logger.warning("Deprecated batch analyze endpoint called")
+    
     recognizer = get_recognizer()
     results = {}
     

@@ -1,0 +1,196 @@
+### FaceCV Complete API Test Suite
+### Testing all endpoints to identify redundancies
+
+@host = http://localhost:7003
+
+### ==================== HEALTH & BASIC ====================
+
+### 1. Root Health Check
+GET {{host}}/health
+
+### 2. Root Path
+GET {{host}}/
+
+### ==================== VIDEO STREAM ====================
+
+### 3. Process Video Stream
+POST {{host}}/api/v1/stream/process
+Content-Type: application/json
+
+{
+  "source": "rtsp://example.com/stream",
+  "enable_webhook": true
+}
+
+### 4. Get Available Video Sources
+GET {{host}}/api/v1/stream/sources
+
+### ==================== DEEPFACE APIs ====================
+
+### 5. DeepFace Health
+GET {{host}}/api/v1/deepface/health
+
+### 6. List Faces (DeepFace)
+GET {{host}}/api/v1/deepface/faces/
+
+### 7. DeepFace Recognition
+POST {{host}}/api/v1/deepface/recognition
+Content-Type: multipart/form-data; boundary=----FormBoundary
+
+------FormBoundary
+Content-Disposition: form-data; name="file"; filename="test.jpg"
+Content-Type: image/jpeg
+
+< /home/a/PycharmProjects/facecv/test_images/test_face.jpg
+------FormBoundary--
+
+### 8. DeepFace Webcam Stream
+GET {{host}}/api/v1/deepface/recognize/webcam/stream
+
+### ==================== WEBHOOK APIs ====================
+
+### 9. List Webhooks
+GET {{host}}/api/v1/webhooks
+
+### 10. Create Webhook
+POST {{host}}/api/v1/webhooks
+Content-Type: application/json
+
+{
+  "url": "http://example.com/webhook",
+  "events": ["face_detected", "face_recognized"],
+  "enabled": true
+}
+
+### 11. Test Webhook
+POST {{host}}/api/v1/webhooks/test
+Content-Type: application/json
+
+{
+  "url": "http://example.com/webhook"
+}
+
+### 12. Get Webhook Stats
+GET {{host}}/api/v1/webhooks/stats
+
+### ==================== INSIGHTFACE APIs ====================
+
+### 13. InsightFace Health
+GET {{host}}/api/v1/insightface/health
+
+### 14. InsightFace Faces
+GET {{host}}/api/v1/insightface/faces
+
+### 15. InsightFace Detect
+POST {{host}}/api/v1/insightface/detect
+Content-Type: multipart/form-data; boundary=----FormBoundary
+
+------FormBoundary
+Content-Disposition: form-data; name="file"; filename="test.jpg"
+Content-Type: image/jpeg
+
+< /home/a/PycharmProjects/facecv/test_images/test_face.jpg
+------FormBoundary--
+
+### 16. InsightFace Recognize
+POST {{host}}/api/v1/insightface/recognize
+Content-Type: multipart/form-data; boundary=----FormBoundary
+
+------FormBoundary
+Content-Disposition: form-data; name="file"; filename="test.jpg"
+Content-Type: image/jpeg
+
+< /home/a/PycharmProjects/facecv/test_images/test_face.jpg
+------FormBoundary--
+
+### ==================== CAMERA STREAMING ====================
+
+### 17. Camera Connect
+POST {{host}}/api/v1/camera/connect
+Content-Type: application/json
+
+{
+  "source_type": "local",
+  "index": 0
+}
+
+### 18. Camera Status
+GET {{host}}/api/v1/camera/status
+
+### 19. Camera Stream (SSE)
+GET {{host}}/api/v1/camera/stream
+Accept: text/event-stream
+
+### 20. Test RTSP
+GET {{host}}/api/v1/camera/test/rtsp?url=rtsp://example.com/stream
+
+### 21. Test Local Camera
+GET {{host}}/api/v1/camera/test/local?index=0
+
+### 22. Camera Disconnect
+POST {{host}}/api/v1/camera/disconnect
+
+### ==================== BATCH PROCESSING ====================
+
+### 23. Batch Detect
+POST {{host}}/api/v1/batch/detect
+Content-Type: multipart/form-data; boundary=----FormBoundary
+
+------FormBoundary
+Content-Disposition: form-data; name="files"; filename="test1.jpg"
+Content-Type: image/jpeg
+
+< /home/a/PycharmProjects/facecv/test_images/test_face.jpg
+------FormBoundary--
+
+### 24. Batch Register
+POST {{host}}/api/v1/batch/register
+Content-Type: multipart/form-data; boundary=----FormBoundary
+
+------FormBoundary
+Content-Disposition: form-data; name="files"; filename="test1.jpg"
+Content-Type: image/jpeg
+
+< /home/a/PycharmProjects/facecv/test_images/test_face.jpg
+------FormBoundary
+Content-Disposition: form-data; name="names"
+
+["Test Person 1"]
+------FormBoundary--
+
+### ==================== MODEL MANAGEMENT ====================
+
+### 25. Model Status
+GET {{host}}/api/v1/models/status
+
+### 26. Available Providers
+GET {{host}}/api/v1/models/providers
+
+### 27. Load Model
+POST {{host}}/api/v1/models/load
+Content-Type: application/json
+
+{
+  "model_name": "buffalo_l",
+  "provider": "CPUExecutionProvider"
+}
+
+### 28. Model Performance
+GET {{host}}/api/v1/models/performance
+
+### ==================== SYSTEM HEALTH ====================
+
+### 29. Comprehensive Health
+GET {{host}}/api/v1/health/comprehensive
+
+### 30. CPU Health
+GET {{host}}/api/v1/health/cpu
+
+### 31. Memory Health
+GET {{host}}/api/v1/health/memory
+
+### 32. GPU Health
+GET {{host}}/api/v1/health/gpu
+
+### 33. Database Health
+GET {{host}}/api/v1/health/database

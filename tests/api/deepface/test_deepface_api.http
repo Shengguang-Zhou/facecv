@@ -1,0 +1,43 @@
+### DeepFace API 测试
+
+### 1. 健康检查
+GET http://localhost:7003/api/v1/deepface/health
+Accept: application/json
+
+### 2. 注册人脸
+POST http://localhost:7003/api/v1/deepface/faces/
+Content-Type: multipart/form-data; boundary=----WebKitFormBoundary7MA4YWxkTrZu0gW
+
+------WebKitFormBoundary7MA4YWxkTrZu0gW
+Content-Disposition: form-data; name="name"
+
+测试用户1
+------WebKitFormBoundary7MA4YWxkTrZu0gW
+Content-Disposition: form-data; name="file"; filename="test.jpg"
+Content-Type: image/jpeg
+
+< /home/a/PycharmProjects/facecv/test_face.jpg
+------WebKitFormBoundary7MA4YWxkTrZu0gW
+Content-Disposition: form-data; name="metadata"
+
+{"department": "技术部", "employee_id": "DF001"}
+------WebKitFormBoundary7MA4YWxkTrZu0gW--
+
+### 3. 获取人脸列表（使用内存数据库）
+GET http://localhost:7003/api/v1/deepface/faces/
+Accept: application/json
+
+### 4. 人脸识别
+POST http://localhost:7003/api/v1/deepface/recognition
+Content-Type: multipart/form-data; boundary=----WebKitFormBoundary7MA4YWxkTrZu0gW
+
+------WebKitFormBoundary7MA4YWxkTrZu0gW
+Content-Disposition: form-data; name="file"; filename="test.jpg"
+Content-Type: image/jpeg
+
+< /home/a/PycharmProjects/facecv/test_face.jpg
+------WebKitFormBoundary7MA4YWxkTrZu0gW
+Content-Disposition: form-data; name="threshold"
+
+0.6
+------WebKitFormBoundary7MA4YWxkTrZu0gW--

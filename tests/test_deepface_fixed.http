@@ -1,0 +1,69 @@
+### Test DeepFace API Endpoints After Fixes
+
+### 1. Test Recognition Endpoint - Should not have validation errors
+POST http://localhost:8000/api/v1/deepface/recognition
+Content-Type: multipart/form-data; boundary=----WebKitFormBoundary7MA4YWxkTrZu0gW
+
+------WebKitFormBoundary7MA4YWxkTrZu0gW
+Content-Disposition: form-data; name="file"; filename="test_face.jpg"
+Content-Type: image/jpeg
+
+< /home/a/PycharmProjects/EurekCV/dataset/faces/1.jpg
+------WebKitFormBoundary7MA4YWxkTrZu0gW
+Content-Disposition: form-data; name="threshold"
+
+0.6
+------WebKitFormBoundary7MA4YWxkTrZu0gW--
+
+### 2. Test Verification Endpoint - Should use similarity field
+POST http://localhost:8000/api/v1/deepface/verify/
+Content-Type: multipart/form-data; boundary=----WebKitFormBoundary7MA4YWxkTrZu0gW
+
+------WebKitFormBoundary7MA4YWxkTrZu0gW
+Content-Disposition: form-data; name="file1"; filename="face1.jpg"
+Content-Type: image/jpeg
+
+< /home/a/PycharmProjects/EurekCV/dataset/faces/1.jpg
+------WebKitFormBoundary7MA4YWxkTrZu0gW
+Content-Disposition: form-data; name="file2"; filename="face2.jpg"
+Content-Type: image/jpeg
+
+< /home/a/PycharmProjects/EurekCV/dataset/faces/2.jpg
+------WebKitFormBoundary7MA4YWxkTrZu0gW
+Content-Disposition: form-data; name="threshold"
+
+0.6
+------WebKitFormBoundary7MA4YWxkTrZu0gW--
+
+### 3. Test Analysis Endpoint - Should not have numpy serialization errors
+POST http://localhost:8000/api/v1/deepface/analyze/
+Content-Type: multipart/form-data; boundary=----WebKitFormBoundary7MA4YWxkTrZu0gW
+
+------WebKitFormBoundary7MA4YWxkTrZu0gW
+Content-Disposition: form-data; name="file"; filename="test_face.jpg"
+Content-Type: image/jpeg
+
+< /home/a/PycharmProjects/EurekCV/dataset/faces/1.jpg
+------WebKitFormBoundary7MA4YWxkTrZu0gW
+Content-Disposition: form-data; name="actions"
+
+emotion,age,gender,race
+------WebKitFormBoundary7MA4YWxkTrZu0gW--
+
+### 4. Test Get Face by ID - Should work without errors
+GET http://localhost:8000/api/v1/deepface/faces/0
+
+### 5. Test Register Face - For completeness
+POST http://localhost:8000/api/v1/deepface/faces/
+Content-Type: multipart/form-data; boundary=----WebKitFormBoundary7MA4YWxkTrZu0gW
+
+------WebKitFormBoundary7MA4YWxkTrZu0gW
+Content-Disposition: form-data; name="name"
+
+Test Person Fixed
+------WebKitFormBoundary7MA4YWxkTrZu0gW
+Content-Disposition: form-data; name="file"; filename="test_face.jpg"
+Content-Type: image/jpeg
+
+< /home/a/PycharmProjects/EurekCV/dataset/faces/1.jpg
+------WebKitFormBoundary7MA4YWxkTrZu0gW--

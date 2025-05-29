@@ -376,6 +376,20 @@ class HybridFaceDB(AbstractFaceDB):
         
         return mysql_result and chroma_result
     
+    def search_by_name(self, name: str, limit: int = 100, offset: int = 0) -> List[Dict[str, Any]]:
+        """
+        根据姓名搜索人脸（支持分页）
+        
+        Args:
+            name: 人员姓名（支持模糊搜索）
+            limit: 返回结果数量限制
+            offset: 分页偏移量
+            
+        Returns:
+            人脸信息列表
+        """
+        return self.relational_db.search_by_name(name, limit, offset)
+    
     def close(self) -> None:
         """Close database connections."""
         self.relational_db.close()

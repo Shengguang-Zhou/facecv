@@ -1,0 +1,209 @@
+### Test InsightFace API Endpoints
+### Base URL
+@baseUrl = http://localhost:7003
+@contentType = application/json
+
+### 1. Health Check
+GET {{baseUrl}}/api/insightface/health
+Accept: {{contentType}}
+
+###
+
+### 2. Get Available Models
+GET {{baseUrl}}/api/insightface/models
+Accept: {{contentType}}
+
+###
+
+### 3. Get Current Model
+GET {{baseUrl}}/api/insightface/model
+Accept: {{contentType}}
+
+###
+
+### 4. Switch Model (to buffalo_l if available)
+POST {{baseUrl}}/api/insightface/model
+Content-Type: {{contentType}}
+
+{
+  "model_name": "buffalo_l"
+}
+
+###
+
+### 5. Face Detection - URL
+POST {{baseUrl}}/api/insightface/detect
+Content-Type: {{contentType}}
+
+{
+  "image_url": "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400"
+}
+
+###
+
+### 6. Face Detection - Base64
+POST {{baseUrl}}/api/insightface/detect
+Content-Type: {{contentType}}
+
+{
+  "image_base64": "/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQcHBwoIChMKChMoGhYaKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wAARCABAAEADASIAAhEBAxEB/8QAGwABAAIDAQEAAAAAAAAAAAAAAAQFAQMGAgf/xAAtEAACAgECBQMDBAMAAAAAAAABAgADBAUREiExQVEGE2EicZEUMoGhI0Kx/8QAGAEAAwEBAAAAAAAAAAAAAAAAAAECAwT/xAAaEQEBAQEBAQEAAAAAAAAAAAAAARECIRIx/9oADAMBAAIRAxEAPwD7NERAREQEREBERARNGVl42Ktdl91VKWvwVs7BQze+w/J2Eb5jOv1bSsJ+DL1HGTZ2N1axFII36gnyI8T61kTLLqaq+O2xUX5YgfrOT1L19pWJaK8em7LYW8Fnh2VQCNz13PMEbSk9QeqM3Uwq5bomnV7O1VLAKSFYjdiRudztM+upGnPNr6dbqOFRQMi7KorrPR3cAGc5qnr7TsY0rjVWZJsDcS/sG3cM3cc+k4TKW37LMvGpCG5F3IAFfcn8Cbw1dQJyXS0cO5rrbiIHbn228zO96048x0mo+u9ZzSjVW1YtacRCVICT+SZjJ9fetMREdMutXbiC8a1s3XfqJzi5V/tBKKVWssW5jiOxOxO5/qeKXy2LcFdRBBLN2HiT9Ks9NH6jl/1X6T1j6gyMoWM3te5zRrHVOe+5P7QT/E52zMs4+O5XG5B+IfJ6mOGvHG1QNh7b7f8AI7SJXk/uYMVcnqOh+JXyMtXZzsgFVFxUBNuEdj8zD2Xjbi4wPG0jJkH2xZsWU8mI/wCz21xJJPIyaaZYKvQAfEqr3e7iCkkb8h4n1vRNNGBpOPiwAz4mRnP7pCr+5ggBPQeO0+d+h8p9JsqyqwrIXCupG42PMT6Yn1Ddm5n7AYHzE1AiIgIiICR7dLwbH4mxwCd9+EleZ36AyREVC7LlMPs8HJd6XFT89yh6dR2kVM2VXsRSefX8TMSsa4Ss3LBvqCbgbkA7zCZTvsDtv5iIkrcrJtxqWtxqPesTYtX7nASCQTyHLpNmPm42Svt4d7pY6k8FiEHYc+h3iIBe6Vp+n09a7mV92drFK7EciOLnt3/M6eIgCIiB//Z"
+}
+
+###
+
+### 7. Face Registration - URL
+POST {{baseUrl}}/api/insightface/register
+Content-Type: {{contentType}}
+
+{
+  "name": "John Doe",
+  "image_url": "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400"
+}
+
+###
+
+### 8. Face Registration - Base64
+POST {{baseUrl}}/api/insightface/register
+Content-Type: {{contentType}}
+
+{
+  "name": "Test User",
+  "image_base64": "/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQcHBwoIChMKChMoGhYaKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wAARCABAAEADASIAAhEBAxEB/8QAGwABAAIDAQEAAAAAAAAAAAAAAAQFAQMGAgf/xAAtEAACAgECBQMDBAMAAAAAAAABAgADBAUREiExQVEGE2EicZEUMoGhI0Kx/8QAGAEAAwEBAAAAAAAAAAAAAAAAAAECAwT/xAAaEQEBAQEBAQEAAAAAAAAAAAAAARECIRIx/9oADAMBAAIRAxEAPwD7NERAREQEREBERARNGVl42Ktdl91VKWvwVs7BQze+w/J2Eb5jOv1bSsJ+DL1HGTZ2N1axFII36gnyI8T61kTLLqaq+O2xUX5YgfrOT1L19pWJaK8em7LYW8Fnh2VQCNz13PMEbSk9QeqM3Uwq5bomnV7O1VLAKSFYjdiRudztM+upGnPNr6dbqOFRQMi7KorrPR3cAGc5qnr7TsY0rjVWZJsDcS/sG3cM3cc+k4TKW37LMvGpCG5F3IAFfcn8Cbw1dQJyXS0cO5rrbiIHbn228zO96048x0mo+u9ZzSjVW1YtacRCVICT+SZjJ9fetMREdMutXbiC8a1s3XfqJzi5V/tBKKVWssW5jiOxOxO5/qeKXy2LcFdRBBLN2HiT9Ks9NH6jl/1X6T1j6gyMoWM3te5zRrHVOe+5P7QT/E52zMs4+O5XG5B+IfJ6mOGvHG1QNh7b7f8AI7SJXk/uYMVcnqOh+JXyMtXZzsgFVFxUBNuEdj8zD2Xjbi4wPG0jJkH2xZsWU8mI/wCz21xJJPIyaaZYKvQAfEqr3e7iCkkb8h4n1vRNNGBpOPiwAz4mRnP7pCr+5ggBPQeO0+d+h8p9JsqyqwrIXCupG42PMT6Yn1Ddm5n7AYHzE1AiIgIiICR7dLwbH4mxwCd9+EleZ36AyREVC7LlMPs8HJd6XFT89yh6dR2kVM2VXsRSefX8TMSsa4Ss3LBvqCbgbkA7zCZTvsDtv5iIkrcrJtxqWtxqPesTYtX7nASCQTyHLpNmPm42Svt4d7pY6k8FiEHYc+h3iIBe6Vp+n09a7mV92drFK7EciOLnt3/M6eIgCIiB//Z"
+}
+
+###
+
+### 9. Get All Faces
+GET {{baseUrl}}/api/insightface/faces
+Accept: {{contentType}}
+
+###
+
+### 10. Get Face by Name
+GET {{baseUrl}}/api/insightface/faces/John%20Doe
+Accept: {{contentType}}
+
+###
+
+### 11. Update Face
+PUT {{baseUrl}}/api/insightface/faces/John%20Doe
+Content-Type: {{contentType}}
+
+{
+  "name": "John Smith",
+  "image_url": "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=400"
+}
+
+###
+
+### 12. Face Recognition - URL
+POST {{baseUrl}}/api/insightface/recognize
+Content-Type: {{contentType}}
+
+{
+  "image_url": "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400",
+  "threshold": 0.4
+}
+
+###
+
+### 13. Face Recognition - Base64
+POST {{baseUrl}}/api/insightface/recognize
+Content-Type: {{contentType}}
+
+{
+  "image_base64": "/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQcHBwoIChMKChMoGhYaKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wAARCABAAEADASIAAhEBAxEB/8QAGwABAAIDAQEAAAAAAAAAAAAAAAQFAQMGAgf/xAAtEAACAgECBQMDBAMAAAAAAAABAgADBAUREiExQVEGE2EicZEUMoGhI0Kx/8QAGAEAAwEBAAAAAAAAAAAAAAAAAAECAwT/xAAaEQEBAQEBAQEAAAAAAAAAAAAAARECIRIx/9oADAMBAAIRAxEAPwD7NERAREQEREBERARNGVl42Ktdl91VKWvwVs7BQze+w/J2Eb5jOv1bSsJ+DL1HGTZ2N1axFII36gnyI8T61kTLLqaq+O2xUX5YgfrOT1L19pWJaK8em7LYW8Fnh2VQCNz13PMEbSk9QeqM3Uwq5bomnV7O1VLAKSFYjdiRudztM+upGnPNr6dbqOFRQMi7KorrPR3cAGc5qnr7TsY0rjVWZJsDcS/sG3cM3cc+k4TKW37LMvGpCG5F3IAFfcn8Cbw1dQJyXS0cO5rrbiIHbn228zO96048x0mo+u9ZzSjVW1YtacRCVICT+SZjJ9fetMREdMutXbiC8a1s3XfqJzi5V/tBKKVWssW5jiOxOxO5/qeKXy2LcFdRBBLN2HiT9Ks9NH6jl/1X6T1j6gyMoWM3te5zRrHVOe+5P7QT/E52zMs4+O5XG5B+IfJ6mOGvHG1QNh7b7f8AI7SJXk/uYMVcnqOh+JXyMtXZzsgFVFxUBNuEdj8zD2Xjbi4wPG0jJkH2xZsWU8mI/wCz21xJJPIyaaZYKvQAfEqr3e7iCkkb8h4n1vRNNGBpOPiwAz4mRnP7pCr+5ggBPQeO0+d+h8p9JsqyqwrIXCupG42PMT6Yn1Ddm5n7AYHzE1AiIgIiICR7dLwbH4mxwCd9+EleZ36AyREVC7LlMPs8HJd6XFT89yh6dR2kVM2VXsRSefX8TMSsa4Ss3LBvqCbgbkA7zCZTvsDtv5iIkrcrJtxqWtxqPesTYtX7nASCQTyHLpNmPm42Svt4d7pY6k8FiEHYc+h3iIBe6Vp+n09a7mV92drFK7EciOLnt3/M6eIgCIiB//Z",
+  "threshold": 0.4
+}
+
+###
+
+### 14. Face Verification - URL
+POST {{baseUrl}}/api/insightface/verify
+Content-Type: {{contentType}}
+
+{
+  "image1_url": "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400",
+  "image2_url": "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400"
+}
+
+###
+
+### 15. Face Verification - Base64
+POST {{baseUrl}}/api/insightface/verify
+Content-Type: {{contentType}}
+
+{
+  "image1_base64": "/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQcHBwoIChMKChMoGhYaKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wAARCABAAEADASIAAhEBAxEB/8QAGwABAAIDAQEAAAAAAAAAAAAAAAQFAQMGAgf/xAAtEAACAgECBQMDBAMAAAAAAAABAgADBAUREiExQVEGE2EicZEUMoGhI0Kx/8QAGAEAAwEBAAAAAAAAAAAAAAAAAAECAwT/xAAaEQEBAQEBAQEAAAAAAAAAAAAAARECIRIx/9oADAMBAAIRAxkAPwD7NERAREQEREBERARNGVl42Ktdl91VKWvwVs7BQze+w/J2Eb5jOv1bSsJ+DL1HGTZ2N1axFII36gnyI8T61kTLLqaq+O2xUX5YgfrOT1L19pWJaK8em7LYW8Fnh2VQCNz13PMEbSk9QeqM3Uwq5bomnV7O1VLAKSFYjdiRudztM+upGnPNr6dbqOFRQMi7KorrPR3cAGc5qnr7TsY0rjVWZJsDcS/sG3cM3cc+k4TKW37LMvGpCG5F3IAFfcn8Cbw1dQJyXS0cO5rrbiIHbn228zO96048x0mo+u9ZzSjVW1YtacRCVICT+SZjJ9fetMREdMutXbiC8a1s3XfqJzi5V/tBKKVWssW5jiOxOxO5/qeKXy2LcFdRBBLN2HiT9Ks9NH6jl/1X6T1j6gyMoWM3te5zRrHVOe+5P7QT/E52zMs4+O5XG5B+IfJ6mOGvHG1QNh7b7f8AI7SJXk/uYMVcnqOh+JXyMtXZzsgFVFxUBNuEdj8zD2Xjbi4wPG0jJkH2xZsWU8mI/wCz21xJJPIyaaZYKvQAfEqr3e7iCkkb8h4n1vRNNGBpOPiwAz4mRnP7pCr+5ggBPQeO0+d+h8p9JsqyqwrIXCupG42PMT6Yn1Ddm5n7AYHzE1AiIgIiICR7dLwbH4mxwCd9+EleZ36AyREVC7LlMPs8HJd6XFT89yh6dR2kVM2VXsRSefX8TMSsa4Ss3LBvqCbgbkA7zCZTvsDtv5iIkrcrJtxqWtxqPesTYtX7nASCQTyHLpNmPm42Svt4d7pY6k8FiEHYc+h3iIBe6Vp+n09a7mV92drFK7EciOLnt3/M6eIgCIiB//Z",
+  "image2_base64": "/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQcHBwoIChMKChMoGhYaKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wAARCABAAEADASIAAhEBAxEB/8QAGwABAAIDAQEAAAAAAAAAAAAAAAQFAQMGAgf/xAAtEAACAgECBQMDBAMAAAAAAAABAgADBAUREiExQVEGE2EicZEUMoGhI0Kx/8QAGAEAAwEBAAAAAAAAAAAAAAAAAAECAwT/xAAaEQEBAQEBAQEAAAAAAAAAAAAAARECIRIx/9oADAMBAAIRAxEAPwD7NERAREQEREBERARNGVl42Ktdl91VKWvwVs7BQze+w/J2Eb5jOv1bSsJ+DL1HGTZ2N1axFII36gnyI8T61kTLLqaq+O2xUX5YgfrOT1L19pWJaK8em7LYW8Fnh2VQCNz13PMEbSk9QeqM3Uwq5bomnV7O1VLAKSFYjdiRudztM+upGnPNr6dbqOFRQMi7KorrPR3cAGc5qnr7TsY0rjVWZJsDcS/sG3cM3cc+k4TKW37LMvGpCG5F3IAFfcn8Cbw1dQJyXS0cO5rrbiIHbn228zO96048x0mo+u9ZzSjVW1YtacRCVICT+SZjJ9fetMREdMutXbiC8a1s3XfqJzi5V/tBKKVWssW5jiOxOxO5/qeKXy2LcFdRBBLN2HiT9Ks9NH6jl/1X6T1j6gyMoWM3te5zRrHVOe+5P7QT/E52zMs4+O5XG5B+IfJ6mOGvHG1QNh7b7f8AI7SJXk/uYMVcnqOh+JXyMtXZzsgFVFxUBNuEdj8zD2Xjbi4wPG0jJkH2xZsWU8mI/wCz21xJJPIyaaZYKvQAfEqr3e7iCkkb8h4n1vRNNGBpOPiwAz4mRnP7pCr+5ggBPQeO0+d+h8p9JsqyqwrIXCupG42PMT6Yn1Ddm5n7AYHzE1AiIgIiICR7dLwbH4mxwCd9+EleZ36AyREVC7LlMPs8HJd6XFT89yh6dR2kVM2VXsRSefX8TMSsa4Ss3LBvqCbgbkA7zCZTvsDtv5iIkrcrJtxqWtxqPesTYtX7nASCQTyHLpNmPm42Svt4d7pY6k8FiEHYc+h3iIBe6Vp+n09a7mV92drFK7EciOLnt3/M6eIgCIiB//Z"
+}
+
+###
+
+### 16. Delete Face by Name
+DELETE {{baseUrl}}/api/insightface/faces/John%20Doe
+Accept: {{contentType}}
+
+###
+
+### 17. Delete Face by ID (replace with actual ID from get faces response)
+DELETE {{baseUrl}}/api/insightface/faces/id/12345678-1234-1234-1234-123456789012
+Accept: {{contentType}}
+
+###
+
+### 18. Face Analysis - URL
+POST {{baseUrl}}/api/insightface/analyze
+Content-Type: {{contentType}}
+
+{
+  "image_url": "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400"
+}
+
+###
+
+### 19. Face Analysis - Base64
+POST {{baseUrl}}/api/insightface/analyze
+Content-Type: {{contentType}}
+
+{
+  "image_base64": "/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQcHBwoIChMKChMoGhYaKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wAARCABAAEADASIAAhEBAxEB/8QAGwABAAIDAQEAAAAAAAAAAAAAAAQFAQMGAgf/xAAtEAACAgECBQMDBAMAAAAAAAABAgADBAUREiExQVEGE2EicZEUMoGhI0Kx/8QAGAEAAwEBAAAAAAAAAAAAAAAAAAECAwT/xAAaEQEBAQEBAQEAAAAAAAAAAAAAARECIRIx/9oADAMBAAIRAxkAPwD7NERAREQEREBERARNGVl42Ktdl91VKWvwVs7BQze+w/J2Eb5jOv1bSsJ+DL1HGTZ2N1axFII36gnyI8T61kTLLqaq+O2xUX5YgfrOT1L19pWJaK8em7LYW8Fnh2VQCNz13PMEbSk9QeqM3Uwq5bomnV7O1VLAKSFYjdiRudztM+upGnPNr6dbqOFRQMi7KorrPR3cAGc5qnr7TsY0rjVWZJsDcS/sG3cM3cc+k4TKW37LMvGpCG5F3IAFfcn8Cbw1dQJyXS0cO5rrbiIHbn228zO96048x0mo+u9ZzSjVW1YtacRCVICT+SZjJ9fetMREdMutXbiC8a1s3XfqJzi5V/tBKKVWssW5jiOxOxO5/qeKXy2LcFdRBBLN2HiT9Ks9NH6jl/1X6T1j6gyMoWM3te5zRrHVOe+5P7QT/E52zMs4+O5XG5B+IfJ6mOGvHG1QNh7b7f8AI7SJXk/uYMVcnqOh+JXyMtXZzsgFVFxUBNuEdj8zD2Xjbi4wPG0jJkH2xZsWU8mI/wCz21xJJPIyaaZYKvQAfEqr3e7iCkkb8h4n1vRNNGBpOPiwAz4mRnP7pCr+5ggBPQeO0+d+h8p9JsqyqwrIXCupG42PMT6Yn1Ddm5n7AYHzE1AiIgIiICR7dLwbH4mxwCd9+EleZ36AyREVC7LlMPs8HJd6XFT89yh6dR2kVM2VXsRSefX8TMSsa4Ss3LBvqCbgbkA7zCZTvsDtv5iIkrcrJtxqWtxqPesTYtX7nASCQTyHLpNmPm42Svt4d7pY6k8FiEHYc+h3iIBe6Vp+n09a7mV92drFK7EciOLnt3/M6eIgCIiB//Z"
+}
+
+###
+
+### 20. Test Face Detection with Local Image
+POST {{baseUrl}}/api/insightface/detect
+Content-Type: multipart/form-data; boundary=boundary
+
+--boundary
+Content-Disposition: form-data; name="file"; filename="test_face.jpg"
+Content-Type: image/jpeg
+
+< /home/a/PycharmProjects/EurekCV/dataset/faces/person1/image1.jpg
+--boundary--
+
+###
+
+### 21. Test Face Registration with Local Image
+POST {{baseUrl}}/api/insightface/register
+Content-Type: multipart/form-data; boundary=boundary
+
+--boundary
+Content-Disposition: form-data; name="name"
+
+Local Test User
+--boundary
+Content-Disposition: form-data; name="file"; filename="test_face.jpg"
+Content-Type: image/jpeg
+
+< /home/a/PycharmProjects/EurekCV/dataset/faces/person2/image1.jpg
+--boundary--
+
+###
+
+### 22. Get Model Statistics
+GET {{baseUrl}}/api/insightface/stats
+Accept: {{contentType}}
+
+###

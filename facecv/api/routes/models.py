@@ -1,4 +1,8 @@
-"""Model Management API Routes"""
+"""Model Management API Routes
+
+DEPRECATED: These model management endpoints are deprecated and will be removed in a future version.
+Model loading/unloading is now handled automatically by the framework.
+"""
 
 from fastapi import APIRouter, HTTPException, Query
 from typing import Dict, List, Any, Optional
@@ -8,12 +12,13 @@ import psutil
 import os
 from datetime import datetime
 from pydantic import BaseModel
+import warnings
 
 from facecv.models.insightface.real_recognizer import RealInsightFaceRecognizer
 from facecv.config import get_settings
 from facecv.database.sqlite_facedb import SQLiteFaceDB
 
-router = APIRouter(prefix="/api/v1/models", tags=["Model Management"])
+router = APIRouter(prefix="/api/v1/models", tags=["Model Management (Deprecated)"])
 logger = logging.getLogger(__name__)
 
 # Global model storage
@@ -149,8 +154,10 @@ async def get_available_providers():
         raise HTTPException(status_code=500, detail=f"Failed to get providers: {str(e)}")
 
 @router.post("/load",
-    summary="加载模型",
-    description="""加载指定的人脸识别模型。
+    summary="加载模型 (已弃用)",
+    description="""**⚠️ DEPRECATED**: 此接口已被弃用，将在未来版本中移除。模型加载现在由框架自动处理。
+    
+    加载指定的人脸识别模型。
     
     支持的模型：
     - buffalo_l: 高精度模型（较大）
@@ -163,8 +170,17 @@ async def get_available_providers():
     2. 初始化模型实例
     3. 加载模型权重
     4. 验证模型功能
-    """)
+    """,
+    deprecated=True)
 async def load_model(request: LoadModelRequest):
+    warnings.warn(
+        "The model load endpoint is deprecated and will be removed in a future version. "
+        "Model loading is now handled automatically by the framework.",
+        DeprecationWarning,
+        stacklevel=2
+    )
+    logger.warning("Deprecated model load endpoint called")
+    
     try:
         start_time = time.time()
         
@@ -236,16 +252,27 @@ async def load_model(request: LoadModelRequest):
         )
 
 @router.post("/unload",
-    summary="卸载模型",
-    description="""卸载指定的模型以释放内存。
+    summary="卸载模型 (已弃用)",
+    description="""**⚠️ DEPRECATED**: 此接口已被弃用，将在未来版本中移除。模型生命周期现在由框架自动管理。
+    
+    卸载指定的模型以释放内存。
     
     **卸载过程：**
     1. 停止模型推理
     2. 释放模型内存
     3. 清理相关资源
     4. 更新模型状态
-    """)
+    """,
+    deprecated=True)
 async def unload_model(model_name: str):
+    warnings.warn(
+        "The model unload endpoint is deprecated and will be removed in a future version. "
+        "Model lifecycle is now managed automatically by the framework.",
+        DeprecationWarning,
+        stacklevel=2
+    )
+    logger.warning("Deprecated model unload endpoint called")
+    
     try:
         if model_name not in _model_store:
             raise HTTPException(
@@ -275,12 +302,23 @@ async def unload_model(model_name: str):
         )
 
 @router.get("/info/{model_name}",
-    summary="获取模型信息",
-    description="""获取指定模型的详细信息。
+    summary="获取模型信息 (已弃用)",
+    description="""**⚠️ DEPRECATED**: 此接口已被弃用，将在未来版本中移除。模型信息现在通过配置文件管理。
+    
+    获取指定模型的详细信息。
     
     返回模型的技术规格、性能参数和使用建议。
-    """)
+    """,
+    deprecated=True)
 async def get_model_info(model_name: str):
+    warnings.warn(
+        "The model info endpoint is deprecated and will be removed in a future version. "
+        "Model information is now managed through configuration files.",
+        DeprecationWarning,
+        stacklevel=2
+    )
+    logger.warning("Deprecated model info endpoint called")
+    
     try:
         model_configs = {
             "buffalo_l": {
@@ -345,12 +383,23 @@ async def get_model_info(model_name: str):
         )
 
 @router.get("/performance",
-    summary="获取模型性能指标",
-    description="""获取所有模型的性能统计信息。
+    summary="获取模型性能指标 (已弃用)",
+    description="""**⚠️ DEPRECATED**: 此接口已被弃用，将在未来版本中移除。性能监控应通过专门的监控工具实现。
+    
+    获取所有模型的性能统计信息。
     
     包括推理时间、内存使用、吞吐量等关键指标。
-    """)
+    """,
+    deprecated=True)
 async def get_model_performance():
+    warnings.warn(
+        "The model performance endpoint is deprecated and will be removed in a future version. "
+        "Performance monitoring should be implemented through dedicated monitoring tools.",
+        DeprecationWarning,
+        stacklevel=2
+    )
+    logger.warning("Deprecated model performance endpoint called")
+    
     try:
         performance_data = {
             "timestamp": datetime.now().isoformat(),
@@ -381,12 +430,23 @@ async def get_model_performance():
 # Advanced Model Management
 
 @router.get("/advanced/available",
-    summary="获取可用的高级模型",
-    description="""获取所有可用的高级人脸识别模型列表。
+    summary="获取可用的高级模型 (已弃用)",
+    description="""**⚠️ DEPRECATED**: 此接口已被弃用，将在未来版本中移除。模型信息现在通过配置文件静态管理。
+    
+    获取所有可用的高级人脸识别模型列表。
     
     返回每个模型的详细信息，包括性能特征、使用场景和系统要求。
-    """)
+    """,
+    deprecated=True)
 async def get_available_advanced_models():
+    warnings.warn(
+        "The advanced available models endpoint is deprecated and will be removed in a future version. "
+        "Model information is now managed through configuration files.",
+        DeprecationWarning,
+        stacklevel=2
+    )
+    logger.warning("Deprecated advanced available models endpoint called")
+    
     try:
         models = [
             {
@@ -449,12 +509,23 @@ async def get_available_advanced_models():
         )
 
 @router.post("/advanced/recommendations",
-    summary="获取模型推荐",
-    description="""根据使用场景和系统资源获取最适合的模型推荐。
+    summary="获取模型推荐 (已弃用)",
+    description="""**⚠️ DEPRECATED**: 此接口已被弃用，将在未来版本中移除。模型选择应基于文档和最佳实践。
+    
+    根据使用场景和系统资源获取最适合的模型推荐。
     
     智能分析您的需求和系统能力，推荐最合适的模型配置。
-    """)
+    """,
+    deprecated=True)
 async def get_model_recommendations(request: RecommendationRequest):
+    warnings.warn(
+        "The model recommendations endpoint is deprecated and will be removed in a future version. "
+        "Model selection should be based on documentation and best practices.",
+        DeprecationWarning,
+        stacklevel=2
+    )
+    logger.warning("Deprecated model recommendations endpoint called")
+    
     try:
         recommendations = []
         
@@ -541,20 +612,31 @@ async def get_model_recommendations(request: RecommendationRequest):
         )
 
 @router.post("/advanced/switch",
-    summary="智能模型切换",
-    description="""在运行时切换模型，保持服务连续性。
+    summary="智能模型切换 (已弃用)",
+    description="""**⚠️ DEPRECATED**: 此接口已被弃用，将在未来版本中移除。模型切换现在由框架自动处理。
+    
+    在运行时切换模型，保持服务连续性。
     
     **切换流程：**
     1. 预热新模型
     2. 验证新模型功能
     3. 切换流量到新模型
     4. 卸载旧模型（可选）
-    """)
+    """,
+    deprecated=True)
 async def switch_model(
     from_model: str,
     to_model: str, 
     preserve_state: bool = True
 ):
+    warnings.warn(
+        "The model switch endpoint is deprecated and will be removed in a future version. "
+        "Model switching is now handled automatically by the framework.",
+        DeprecationWarning,
+        stacklevel=2
+    )
+    logger.warning("Deprecated model switch endpoint called")
+    
     try:
         # Validate model names
         valid_models = ["buffalo_l", "buffalo_m", "buffalo_s", "antelopev2"]

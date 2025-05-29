@@ -47,15 +47,13 @@ class VideoStreamProcessor:
         
     def process_stream(self,
                       source: Union[str, int],
-                      callback: Optional[Callable[[List[RecognitionResult]], None]] = None,
-                      duration: Optional[int] = None) -> List[RecognitionResult]:
+                      callback: Optional[Callable[[List[RecognitionResult]], None]] = None) -> List[RecognitionResult]:
         """
         处理视频流
         
         Args:
             source: 视频源（文件路径、摄像头索引或RTSP URL）
             callback: 识别结果回调函数
-            duration: 处理时长（秒），None表示持续处理
             
         Returns:
             所有识别结果列表
@@ -95,10 +93,6 @@ class VideoStreamProcessor:
                     logger.warning("无法读取视频帧")
                     break
                     
-                # 检查处理时长
-                if duration and (time.time() - start_time) > duration:
-                    logger.info(f"达到处理时长 {duration} 秒，停止处理")
-                    break
                     
                 # 跳帧处理
                 frame_count += 1
@@ -216,15 +210,13 @@ class VideoStreamProcessor:
                 
     async def process_stream_async(self,
                                   source: Union[str, int],
-                                  callback: Optional[Callable[[List[RecognitionResult]], None]] = None,
-                                  duration: Optional[int] = None) -> List[RecognitionResult]:
+                                  callback: Optional[Callable[[List[RecognitionResult]], None]] = None) -> List[RecognitionResult]:
         """
         异步处理视频流
         
         Args:
             source: 视频源
             callback: 识别结果回调函数
-            duration: 处理时长（秒）
             
         Returns:
             所有识别结果列表
@@ -234,8 +226,7 @@ class VideoStreamProcessor:
             None,
             self.process_stream,
             source,
-            callback,
-            duration
+            callback
         )
 
 

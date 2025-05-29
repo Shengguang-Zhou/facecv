@@ -1,0 +1,198 @@
+### InsightFace API Performance Tests
+### All endpoints should respond in < 1 second (excluding initial model loading)
+
+@host = http://localhost:7003/api/v1/insightface
+@testImagePath = /home/a/PycharmProjects/EurekCV/dataset/faces/Chandler.jpg
+@testImagePath2 = /home/a/PycharmProjects/EurekCV/dataset/faces/Monica.jpg
+
+### 1. Health Check - Should be < 1s
+# @name healthCheck
+GET {{host}}/health
+
+### 2. List All Faces - Should be < 1s
+# @name listFaces
+GET {{host}}/faces
+
+### 3. Get Model Info - Should be < 1s
+# @name modelInfo
+GET {{host}}/models/info
+
+### 4. Detect Faces - Should be < 1s for single image
+# @name detectFaces
+POST {{host}}/detect
+Content-Type: multipart/form-data; boundary=----FormBoundary
+
+------FormBoundary
+Content-Disposition: form-data; name="image"; filename="test.jpg"
+Content-Type: image/jpeg
+
+< {{testImagePath}}
+------FormBoundary--
+
+### 5. Register Face - Should be < 1s
+# @name registerFace
+POST {{host}}/faces/register
+Content-Type: multipart/form-data; boundary=----FormBoundary
+
+------FormBoundary
+Content-Disposition: form-data; name="image"; filename="chandler.jpg"
+Content-Type: image/jpeg
+
+< {{testImagePath}}
+------FormBoundary
+Content-Disposition: form-data; name="name"
+
+Chandler
+------FormBoundary--
+
+### 6. Search Face by Image - Should be < 1s
+# @name searchFace
+POST {{host}}/faces/search
+Content-Type: multipart/form-data; boundary=----FormBoundary
+
+------FormBoundary
+Content-Disposition: form-data; name="image"; filename="test.jpg"
+Content-Type: image/jpeg
+
+< {{testImagePath}}
+------FormBoundary
+Content-Disposition: form-data; name="threshold"
+
+0.6
+------FormBoundary--
+
+### 7. Verify Two Faces - Should be < 1s
+# @name verifyFaces
+POST {{host}}/verify
+Content-Type: multipart/form-data; boundary=----FormBoundary
+
+------FormBoundary
+Content-Disposition: form-data; name="image1"; filename="img1.jpg"
+Content-Type: image/jpeg
+
+< {{testImagePath}}
+------FormBoundary
+Content-Disposition: form-data; name="image2"; filename="img2.jpg"
+Content-Type: image/jpeg
+
+< {{testImagePath2}}
+------FormBoundary--
+
+### 8. Get Face by ID - Should be < 1s
+# @name getFaceById
+GET {{host}}/faces/{{searchFace.response.body.$.matches[0].face_id}}
+
+### 9. Get Faces by Name - Should be < 1s
+# @name getFacesByName
+GET {{host}}/faces/by-name/Chandler
+
+### 10. Update Face - Should be < 1s
+# @name updateFace
+PUT {{host}}/faces/{{searchFace.response.body.$.matches[0].face_id}}
+Content-Type: application/json
+
+{
+  "name": "Chandler Bing"
+}
+
+### 11. Delete Face by ID - Should be < 1s
+# @name deleteFaceById
+DELETE {{host}}/faces/{{searchFace.response.body.$.matches[0].face_id}}
+
+### 12. Delete Faces by Name - Should be < 1s
+# @name deleteFacesByName
+DELETE {{host}}/faces/by-name/Monica
+
+### 13. Register Another Face for Testing
+# @name registerMonica
+POST {{host}}/faces/register
+Content-Type: multipart/form-data; boundary=----FormBoundary
+
+------FormBoundary
+Content-Disposition: form-data; name="image"; filename="monica.jpg"
+Content-Type: image/jpeg
+
+< {{testImagePath2}}
+------FormBoundary
+Content-Disposition: form-data; name="name"
+
+Monica
+------FormBoundary--
+
+### Performance Test Suite - Run all in sequence
+### Each should complete in < 1s
+
+### Test 1: Health Check Loop (5 times)
+GET {{host}}/health
+###
+GET {{host}}/health
+###
+GET {{host}}/health
+###
+GET {{host}}/health
+###
+GET {{host}}/health
+
+### Test 2: Detection Performance
+POST {{host}}/detect
+Content-Type: multipart/form-data; boundary=----FormBoundary
+
+------FormBoundary
+Content-Disposition: form-data; name="image"; filename="test.jpg"
+Content-Type: image/jpeg
+
+< {{testImagePath}}
+------FormBoundary--
+
+### Test 3: Recognition Performance
+POST {{host}}/faces/search
+Content-Type: multipart/form-data; boundary=----FormBoundary
+
+------FormBoundary
+Content-Disposition: form-data; name="image"; filename="test.jpg"
+Content-Type: image/jpeg
+
+< {{testImagePath}}
+------FormBoundary--
+
+### Test 4: Batch Operations
+GET {{host}}/faces?limit=100
+
+### Additional Tests for Other Endpoints
+
+### Get Available Models
+GET {{host}}/models/available
+
+### Get Faces with Pagination
+GET {{host}}/faces?limit=10&offset=0
+
+### Search with High Threshold
+POST {{host}}/faces/search
+Content-Type: multipart/form-data; boundary=----FormBoundary
+
+------FormBoundary
+Content-Disposition: form-data; name="image"; filename="test.jpg"
+Content-Type: image/jpeg
+
+< {{testImagePath}}
+------FormBoundary
+Content-Disposition: form-data; name="threshold"
+
+0.8
+------FormBoundary--
+
+### Verify Same Person (Should be high similarity)
+POST {{host}}/verify
+Content-Type: multipart/form-data; boundary=----FormBoundary
+
+------FormBoundary
+Content-Disposition: form-data; name="image1"; filename="img1.jpg"
+Content-Type: image/jpeg
+
+< {{testImagePath}}
+------FormBoundary
+Content-Disposition: form-data; name="image2"; filename="img2.jpg"
+Content-Type: image/jpeg
+
+< {{testImagePath}}
+------FormBoundary--

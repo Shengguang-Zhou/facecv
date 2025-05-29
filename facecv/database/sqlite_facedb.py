@@ -476,3 +476,56 @@ class SQLiteFaceDB(AbstractFaceDB):
     def get_faces_by_name(self, name: str) -> List[Dict[str, Any]]:
         """Get faces by name - alias for query_faces_by_name"""
         return self.query_faces_by_name(name)
+    
+    def search_by_name(self, name: str, limit: int = 100, offset: int = 0) -> List[Dict[str, Any]]:
+        """根据姓名搜索人脸（支持分页）"""
+        if self._connection:
+            conn = self._connection
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT id, name, embedding, metadata, created_at, updated_at
+                FROM faces 
+                WHERE name LIKE ?
+                ORDER BY created_at DESC
+                LIMIT ? OFFSET ?
+            """, (f'%{name}%', limit, offset))
+            
+            results = []
+            for row in cursor.fetchall():
+                face_dict = {
+                    'face_id': row['id'],
+                    'person_name': row['name'],
+                    'embedding': np.frombuffer(row['embedding'], dtype=np.float32).tolist(),
+                    'metadata': json.loads(row['metadata']) if row['metadata'] else None,
+                    'created_at': row['created_at'] if row['created_at'] else None,
+                    'updated_at': row['updated_at'] if row['updated_at'] else None
+                }
+                results.append(face_dict)
+                
+            return results
+        else:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT id, name, embedding, metadata, created_at, updated_at
+                    FROM faces 
+                    WHERE name LIKE ?
+                    ORDER BY created_at DESC
+                    LIMIT ? OFFSET ?
+                """, (f'%{name}%', limit, offset))
+                
+                results = []
+                for row in cursor.fetchall():
+                    face_dict = {
+                        'face_id': row['id'],
+                        'person_name': row['name'],
+                        'embedding': np.frombuffer(row['embedding'], dtype=np.float32).tolist(),
+                        'metadata': json.loads(row['metadata']) if row['metadata'] else None,
+                        'created_at': row['created_at'] if row['created_at'] else None,
+                        'updated_at': row['updated_at'] if row['updated_at'] else None
+                    }
+                    results.append(face_dict)
+                    
+                return results

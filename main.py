@@ -10,12 +10,13 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from loguru import logger
 
-from facecv.api.routes import health, stream, webhook, camera_stream, deepface_api
-from facecv.api.routes import insightface_api as insightface
+from facecv.api.routes import health
+from facecv.api.routes import insightface_lazy as insightface
+from facecv.api.routes.deprecated_api import deprecated_router
 from facecv.config import get_settings
 from facecv.config.runtime_config import get_runtime_config
 from facecv.database import get_default_database, test_database_availability
-from facecv.core.webhook import webhook_manager
+# from facecv.core.webhook import webhook_manager  # 已废弃
 from facecv.utils.cuda_utils import setup_cuda_environment
 
 # 获取配置
@@ -62,7 +63,8 @@ async def lifespan(app: FastAPI):
         logger.error(f"数据库初始化失败: {e}")
 
     
-    # 启动 webhook manager
+    # Start webhook manager for stream processing
+    from facecv.core.webhook import webhook_manager
     webhook_manager.start()
     logger.info("Webhook manager 已启动")
     
@@ -71,7 +73,7 @@ async def lifespan(app: FastAPI):
     # 关闭事件
     logger.info("FaceCV API 服务关闭")
     
-    # 停止 webhook manager
+    # Stop webhook manager
     webhook_manager.stop()
     logger.info("Webhook manager 已停止")
 
@@ -97,11 +99,16 @@ app.add_middleware(
 # 注册路由
 app.include_router(health.router)
 # Clean route organization
-app.include_router(stream.router, prefix="/api/v1")
-app.include_router(deepface_api.router)  # DeepFace APIs restored
-app.include_router(webhook.router, prefix="/api/v1")
+# app.include_router(stream.router, prefix="/api/v1")  # Stream APIs deprecated - moved to deprecated_router
+# app.include_router(deepface_api.router)  # DeepFace APIs deprecated - moved to deprecated_router
+# app.include_router(webhook.router, prefix="/api/v1")  # Webhook API 已废弃
 app.include_router(insightface.router, prefix="/api/v1/insightface")
-app.include_router(camera_stream.router)
+
+# Register deprecated routes (includes DeepFace, old InsightFace, and old camera APIs)
+# Commented out to hide from Swagger - these deprecated APIs still exist in codebase
+# app.include_router(deprecated_router)
+# logger.warning("Deprecated API routes loaded - these will be removed in future versions")
+# app.include_router(camera_stream.router)  # Camera Streaming API 已废弃，使用 InsightFace 内置的流处理
 
 try:
     from facecv.api.routes import simple_detect
@@ -110,17 +117,23 @@ try:
 except ImportError as e:
     logger.warning(f"Simple test detection API not loaded: {e}")
 
-# Import and register batch processing routes
-from facecv.api.routes import batch_processing
-app.include_router(batch_processing.router)
+# Import and register batch processing routes (DEPRECATED)
+# Commented out to hide from Swagger
+# try:
+#     from facecv.api.routes import batch_processing
+#     app.include_router(batch_processing.router)
+#     logger.warning("Batch processing APIs loaded - DEPRECATED: These endpoints will be removed in a future version")
+# except ImportError as e:
+#     logger.info(f"Batch processing APIs not loaded: {e}")
 
-# Import and register model management routes
-try:
-    from facecv.api.routes import models
-    app.include_router(models.router)
-    logger.info("Model management APIs loaded")
-except ImportError as e:
-    logger.warning(f"Model management APIs not loaded: {e}")
+# Import and register model management routes (DEPRECATED)
+# Commented out to hide from Swagger
+# try:
+#     from facecv.api.routes import models
+#     app.include_router(models.router)
+#     logger.warning("Model management APIs loaded - DEPRECATED: These endpoints will be removed in a future version")
+# except ImportError as e:
+#     logger.info(f"Model management APIs not loaded: {e}")
 
 # Import and register system health routes
 try:
@@ -129,6 +142,15 @@ try:
     logger.info("System health APIs loaded")
 except ImportError as e:
     logger.warning(f"System health APIs not loaded: {e}")
+
+# 废弃的 API（默认不加载）
+# if settings.load_deprecated_apis:
+#     try:
+#         from deprecated import insightface_deprecated_api
+#         app.include_router(insightface_deprecated_api.router, prefix="/api/v1/insightface")
+#         logger.warning("已加载废弃的 InsightFace API - 仅用于向后兼容")
+#     except ImportError:
+#         pass
 
 # Additional route modules can be added here in the future
 

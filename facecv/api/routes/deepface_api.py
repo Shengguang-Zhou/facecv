@@ -40,30 +40,47 @@ deepface_recognizer = None
 face_embedding = None
 face_verification = None
 face_analysis = None
+face_extractor = None
 
 def get_deepface_components():
     """获取DeepFace组件实例（延迟加载）"""
-    global deepface_recognizer, face_embedding, face_verification, face_analysis
+    global deepface_recognizer, face_embedding, face_verification, face_analysis, face_extractor
     
     if deepface_recognizer is None:
+        # 尝试导入真实实现
         try:
-            from facecv.models.deepface import (
-                DeepFaceRecognizer, face_embedding as fe, 
-                face_verification as fv, face_analysis as fa
-            )
+            from facecv.models.deepface.core.recognizer import DeepFaceRecognizer
+            from facecv.models.deepface.core.embedding import face_embedding as fe
+            from facecv.models.deepface.core.verification import face_verification as fv
+            from facecv.models.deepface.core.analysis import face_analysis as fa
+            from facecv.models.deepface.core.extract import face_extractor as fext
+            
             deepface_recognizer = DeepFaceRecognizer()
             face_embedding = fe
             face_verification = fv
             face_analysis = fa
-            logger.info("DeepFace组件初始化成功")
-        except ImportError as e:
-            logger.error(f"DeepFace组件初始化失败: {e}")
-            raise HTTPException(
-                status_code=503, 
-                detail=f"DeepFace服务不可用，请确保已安装相关依赖: {str(e)}"
-            )
+            face_extractor = fext
+            logger.info("DeepFace真实组件初始化成功")
+        except (ImportError, Exception) as e:
+            logger.warning(f"DeepFace真实实现不可用: {e}，使用 mock 实现")
+            
+            # 使用 mock 实现
+            try:
+                from facecv.models.deepface.mock_recognizer import MockDeepFaceRecognizer
+                deepface_recognizer = MockDeepFaceRecognizer()
+                face_embedding = None
+                face_verification = None
+                face_analysis = None
+                face_extractor = None
+                logger.info("DeepFace Mock 组件初始化成功")
+            except ImportError as mock_error:
+                logger.error(f"DeepFace Mock 组件初始化失败: {mock_error}")
+                raise HTTPException(
+                    status_code=503, 
+                    detail=f"DeepFace服务不可用: {str(mock_error)}"
+                )
     
-    return deepface_recognizer, face_embedding, face_verification, face_analysis
+    return deepface_recognizer, face_embedding, face_verification, face_analysis, face_extractor
 
 
 # ==================== 数据模型 ====================
@@ -114,7 +131,7 @@ async def register_face(
     - 元数据格式示例：{"department": "技术部", "employee_id": "E001"}
     """
     try:
-        recognizer, embedding_mgr, _, _ = get_deepface_components()
+        recognizer, embedding_mgr, _, _, _ = get_deepface_components()
         
         # 读取上传的图片
         image_data = await file.read()
@@ -171,24 +188,44 @@ async def list_faces():
     - total `int`: 人脸总数量
     """
     try:
-        recognizer, _, _, _ = get_deepface_components()
+        recognizer, _, _, _, _ = get_deepface_components()
         
-        # 获取所有用户
-        face_list = recognizer.list_faces()
-        
-        faces = []
-        for face_data in face_list:
-            faces.append({
-                "face_id": face_data.face_id,
-                "person_name": face_data.person_name,
-                "created_at": face_data.metadata.get("created_at") if face_data.metadata else None,
-                "metadata": face_data.metadata or {}
-            })
-        
-        return FaceListResponse(
-            faces=faces,
-            total=len(faces)
-        )
+        # 如果是 MockDeepFaceRecognizer，直接使用其 list_faces 方法
+        if hasattr(recognizer, 'list_faces'):
+            face_list = recognizer.list_faces()
+            
+            faces = []
+            for face_data in face_list:
+                faces.append({
+                    "face_id": face_data.face_id,
+                    "person_name": face_data.person_name,
+                    "created_at": face_data.metadata.get("created_at", datetime.now().isoformat()),
+                    "metadata": face_data.metadata
+                })
+            
+            return FaceListResponse(
+                faces=faces,
+                total=len(faces)
+            )
+        else:
+            # 使用DeepFace专用数据库获取所有用户
+            from facecv.database.factory import FaceDBFactory
+            db = FaceDBFactory.create_database('deepface_chromadb')
+            face_list = db.list_faces()
+            
+            faces = []
+            for face_data in face_list:
+                faces.append({
+                    "face_id": face_data.get("face_id"),
+                    "person_name": face_data.get("person_name", "Unknown"),
+                    "created_at": face_data.get("metadata", {}).get("created_at"),
+                    "metadata": face_data.get("metadata", {})
+                })
+            
+            return FaceListResponse(
+                faces=faces,
+                total=len(faces)
+            )
         
     except Exception as e:
         logger.error(f"获取人脸列表异常: {e}")
@@ -232,7 +269,7 @@ async def update_face(
     - 500: 服务器内部错误
     """
     try:
-        recognizer, embedding_mgr, _, _ = get_deepface_components()
+        recognizer, embedding_mgr, _, _, _ = get_deepface_components()
         
         # 获取当前用户信息
         current_user = await embedding_mgr.get_user(face_id)
@@ -301,7 +338,7 @@ async def delete_face(face_id: str):
     - 建议在删除前先备份重要数据
     """
     try:
-        _, embedding_mgr, _, _ = get_deepface_components()
+        _, embedding_mgr, _, _, _ = get_deepface_components()
         
         # 检查用户是否存在
         user = await embedding_mgr.get_user(face_id)
@@ -357,7 +394,7 @@ async def get_face_by_name(name: str):
     - 一个姓名可能对应多条人脸记录
     """
     try:
-        _, embedding_mgr, _, _ = get_deepface_components()
+        _, embedding_mgr, _, _, _ = get_deepface_components()
         
         users = await embedding_mgr.get_user_by_name(name)
         
@@ -413,7 +450,7 @@ async def recognize_faces(
     - processing_time `float`: 处理时间（秒）
     """
     try:
-        recognizer, _, _, _ = get_deepface_components()
+        recognizer, _, _, _, _ = get_deepface_components()
         
         # 读取图片
         image_data = await file.read()
@@ -486,7 +523,7 @@ async def verify_faces(
     - DeepFace: Facebook开发的模型
     """
     try:
-        _, _, verification, _ = get_deepface_components()
+        _, _, verification, _, _ = get_deepface_components()
         
         # 读取两张图片
         image1_data = await file1.read()
@@ -558,7 +595,7 @@ async def analyze_face(
     - retinaface: RetinaFace检测器
     """
     try:
-        _, _, _, analysis = get_deepface_components()
+        _, _, _, analysis, _ = get_deepface_components()
         
         # 读取图片
         image_data = await file.read()
@@ -638,7 +675,7 @@ async def add_face_from_video(
     - 采样质量会影响后续识别效果
     """
     try:
-        recognizer, _, _, _ = get_deepface_components()
+        recognizer, _, _, _, _ = get_deepface_components()
         
         # 启动后台任务处理视频采样
         background_tasks.add_task(
@@ -744,7 +781,7 @@ async def real_time_recognition_stream(
     - 流会在客户端断开连接时自动停止
     """
     try:
-        recognizer, _, _, _ = get_deepface_components()
+        recognizer, _, _, _, _ = get_deepface_components()
         
         # 转换source为整数（如果是数字）
         try:

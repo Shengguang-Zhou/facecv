@@ -24,6 +24,7 @@ from .abstract_facedb import AbstractFaceDB
 from ..config.database import db_config
 
 logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 
 class MySQLFaceDB(AbstractFaceDB):
@@ -225,8 +226,23 @@ class MySQLFaceDB(AbstractFaceDB):
         if not all_faces:
             return []
         
+        # 只选择与查询 embedding 维度相同的人脸
+        query_dim = embedding.shape[0]
+        compatible_faces = []
+        compatible_embeddings = []
+        
+        for face in all_faces:
+            face_embedding = np.array(face['embedding'])
+            if face_embedding.shape[0] == query_dim:
+                compatible_faces.append(face)
+                compatible_embeddings.append(face_embedding)
+        
+        if not compatible_embeddings:
+            logger.warning(f"No faces with embedding dimension {query_dim} found in database")
+            return []
+        
         # 计算相似度
-        db_embeddings = np.array([face['embedding'] for face in all_faces])
+        db_embeddings = np.array(compatible_embeddings)
         similarities = cosine_similarity(
             embedding.reshape(1, -1),
             db_embeddings
@@ -237,8 +253,8 @@ class MySQLFaceDB(AbstractFaceDB):
         
         results = []
         for idx in top_indices:
-            face = all_faces[idx].copy()
-            face['similarity_score'] = float(similarities[idx])
+            face = compatible_faces[idx].copy()
+            face['similarity'] = float(similarities[idx])  # 使用 'similarity' 而不是 'similarity_score'
             results.append(face)
             
         return results
@@ -377,6 +393,40 @@ class MySQLFaceDB(AbstractFaceDB):
                 'updated_at': face['updated_at'].isoformat() if face['updated_at'] else None
             })
         return formatted_faces
+    
+    def search_by_name(self, name: str, limit: int = 100, offset: int = 0) -> List[Dict[str, Any]]:
+        """根据姓名搜索人脸（支持分页）"""
+        def _search_sync():
+            sql = """
+            SELECT id, name, embedding, metadata, created_at, updated_at
+            FROM faces 
+            WHERE name LIKE :name
+            ORDER BY created_at DESC
+            LIMIT :limit OFFSET :offset
+            """
+            
+            results = []
+            with self._engine.connect() as conn:
+                result = conn.execute(text(sql), {
+                    'name': f'%{name}%',
+                    'limit': limit, 
+                    'offset': offset
+                })
+                
+                for row in result:
+                    face_dict = {
+                        'face_id': row[0],
+                        'person_name': row[1],
+                        'embedding': np.frombuffer(row[2], dtype=np.float32).tolist(),
+                        'metadata': json.loads(row[3]) if row[3] else None,
+                        'created_at': row[4].isoformat() if row[4] else None,
+                        'updated_at': row[5].isoformat() if row[5] else None
+                    }
+                    results.append(face_dict)
+                    
+            return results
+        
+        return self._execute_sync(_search_sync)
     
     def list_faces(self, limit: int = 100, offset: int = 0) -> List[Dict[str, Any]]:
         """列出人脸（带分页）"""
