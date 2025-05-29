@@ -100,12 +100,12 @@ class RuntimeConfig:
                 det_size = [320, 320]
                 batch_size = 4
             elif ram_gb >= 8:
-                model_pack = "scrfd_500m"
+                model_pack = "buffalo_s"  # Use buffalo_s instead of scrfd_500m for consistency
                 det_size = [320, 320]
                 batch_size = 2
             else:
                 # Low resource environment
-                model_pack = "scrfd_500m_kps"
+                model_pack = "buffalo_s"  # Use buffalo_s as the minimal model
                 det_size = [160, 160]
                 batch_size = 1
 
