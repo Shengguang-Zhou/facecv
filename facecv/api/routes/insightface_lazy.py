@@ -629,7 +629,8 @@ async def process_stream_with_webhook(
         _active_streams[stream_id] = {
             "processor": processor,
             "cap": cap,
-            "status": "processing"
+            "status": "processing",
+            "camera_id": str(source)
         }
         
         frame_count = 0
@@ -1053,6 +1054,31 @@ async def stop_stream(stream_id: str):
         }
     else:
         raise HTTPException(status_code=404, detail="Stream not found")
+
+
+@router.get("/stream/active", summary="获取所有活动流")
+async def get_active_streams():
+    """
+    获取所有活动的视频流处理会话
+    
+    **返回:**
+    所有活动流的状态信息
+    """
+    active_streams = []
+    for stream_id, stream_info in _active_streams.items():
+        stream_data = {
+            "stream_id": stream_id,
+            "status": stream_info.get("status", "unknown"),
+            "camera_id": stream_info.get("camera_id", "unknown")
+        }
+        if "error" in stream_info:
+            stream_data["error"] = stream_info["error"]
+        active_streams.append(stream_data)
+    
+    return {
+        "count": len(active_streams),
+        "streams": active_streams
+    }
 
 
 @router.get("/stream/test_camera/{camera_id}", summary="测试摄像头")
