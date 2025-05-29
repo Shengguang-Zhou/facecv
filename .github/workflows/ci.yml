@@ -43,7 +43,7 @@ jobs:
         run: |
           pip install --upgrade pip
           pip install fastapi uvicorn pydantic httpx pytest pytest-asyncio
-          pip install numpy opencv-python-headless pillow python-dotenv
+          pip install numpy opencv-python-headless pillow python-dotenv psutil pynvml
       - name: Test basic API structure
         run: |
           python -c "from facecv.api.routes import health; print('✓ API routes importable')"
@@ -66,7 +66,7 @@ jobs:
         run: |
           pip install --upgrade pip
           pip install fastapi uvicorn httpx pytest pytest-asyncio
-          pip install numpy opencv-python pillow
+          pip install numpy opencv-python pillow python-dotenv
           pip install onnxruntime insightface
           pip install pynvml psutil
       - name: Test face detection
